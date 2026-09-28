@@ -1,0 +1,11 @@
+/*
+!/.gitignore
+!/.dockerignore
+!/.env.example
+!/Dockerfile
+!/LICENSE
+!/README.md
+!/compose.yaml
+!/entrypoint.sh
+!/openchamber.service.example
+!/opencode.jsonc

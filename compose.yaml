@@ -1,0 +1,38 @@
+services:
+  opencode:
+    image: opencode-local:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /workspace
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "10.8.0.4:19432:19432"
+    environment:
+      OPENCHAMBER_UI_PASSWORD: ${OPENCHAMBER_UI_PASSWORD:?Set OPENCHAMBER_UI_PASSWORD in .env}
+      NPM_CONFIG_CACHE: /home/node/.cache/npm
+      PLANNOTATOR_REMOTE: "1"
+      PLANNOTATOR_PORT: "19432"
+      PLANNOTATOR_URL_HOST: "10.8.0.4"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: ${OPENCODE_PIDS_LIMIT:-1024}
+    mem_limit: ${OPENCODE_MEMORY:-18g}
+    cpus: ${OPENCODE_CPUS:-8}
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=${OPENCODE_TMP_SIZE:-1g}
+      - /run:rw,nosuid,nodev,size=${OPENCODE_RUN_SIZE:-1g}
+    volumes:
+      - opencode-home:/home/node
+      - ${OPENCODE_CACHE:-./cache}:/home/node/.cache
+      - ${OPENCODE_WORKSPACE:-./workspace}:/workspace
+      - ${OPENCODE_CONFIG:-./config}:/home/node/.config/opencode
+      - ${OPENCODE_DATA:-./data}:/home/node/.local/share/opencode
+    stdin_open: true
+    tty: true
+
+volumes:
+  opencode-home:
