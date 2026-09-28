@@ -1,0 +1,20 @@
+[Unit]
+Description=Isolated OpenChamber and Cloudflare Tunnel
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=infinity
+StartLimitBurst=5
+
+[Service]
+Type=simple
+Environment="PATH=%h/.local/share/mise/installs/node/latest/bin:/usr/local/bin:/usr/bin"
+Environment="CLOUDFLARE_TUNNEL_ID=replace-with-your-tunnel-id"
+WorkingDirectory=%h/Projects/openchamber-isolated
+ExecStartPre=/usr/bin/docker compose up -d
+ExecStart=/usr/bin/env cf tunnels run ${CLOUDFLARE_TUNNEL_ID}
+ExecStop=/usr/bin/docker compose down
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
