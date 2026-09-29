@@ -5,10 +5,16 @@ services:
       context: .
       dockerfile: Dockerfile
     working_dir: /workspace
+    extra_hosts:
+      - "host.docker.internal:10.0.2.2"
     ports:
       - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3001:3001"
+      - "127.0.0.1:5173:5173"
+      - "127.0.0.1:8080:8080"
       - "10.8.0.4:19432:19432"
     environment:
+      ADB_SERVER_SOCKET: "tcp:host.docker.internal:5037"
       OPENCHAMBER_UI_PASSWORD: ${OPENCHAMBER_UI_PASSWORD:?Set OPENCHAMBER_UI_PASSWORD in .env}
       NPM_CONFIG_CACHE: /home/node/.cache/npm
       PLANNOTATOR_REMOTE: "1"
@@ -20,8 +26,9 @@ services:
     cap_drop:
       - ALL
     pids_limit: ${OPENCODE_PIDS_LIMIT:-1024}
-    mem_limit: ${OPENCODE_MEMORY:-18g}
-    cpus: ${OPENCODE_CPUS:-8}
+    mem_limit: ${OPENCODE_MEMORY:-20g}
+    memswap_limit: ${OPENCODE_MEMORY_SWAP:-28g}
+    cpus: ${OPENCODE_CPUS:-12}
     tmpfs:
       - /tmp:rw,nosuid,nodev,size=${OPENCODE_TMP_SIZE:-1g}
       - /run:rw,nosuid,nodev,size=${OPENCODE_RUN_SIZE:-1g}
