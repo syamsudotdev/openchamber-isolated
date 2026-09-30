@@ -30,7 +30,7 @@ services:
     memswap_limit: ${OPENCODE_MEMORY_SWAP:-28g}
     cpus: ${OPENCODE_CPUS:-12}
     tmpfs:
-      - /tmp:rw,nosuid,nodev,size=${OPENCODE_TMP_SIZE:-1g}
+      - /tmp:rw,exec,nosuid,nodev,size=${OPENCODE_TMP_SIZE:-1g}
       - /run:rw,nosuid,nodev,size=${OPENCODE_RUN_SIZE:-1g}
     volumes:
       - opencode-home:/home/node
