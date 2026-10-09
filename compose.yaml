@@ -7,11 +7,7 @@ services:
     working_dir: /workspace
     extra_hosts:
       - "host.docker.internal:10.0.2.2"
-    ports:
-      - "127.0.0.1:3000:3000"
-      - "127.0.0.1:3001:3001"
-      - "127.0.0.1:5173:5173"
-      - "127.0.0.1:8080:8080"
+    network_mode: host
     environment:
       ADB_SERVER_SOCKET: "tcp:host.docker.internal:5037"
       OPENCHAMBER_UI_PASSWORD: ${OPENCHAMBER_UI_PASSWORD:?Set OPENCHAMBER_UI_PASSWORD in .env}

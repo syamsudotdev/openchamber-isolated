@@ -2,7 +2,7 @@ FROM node:24-bookworm-slim
 
 ARG OPENCODE_VERSION=2.0.25
 ARG OPENCHAMBER_VERSION=2.1.1
-ARG TARGETARCH
+ARG TARGETARCH=amd64
 
 RUN test "${TARGETARCH}" = amd64 \
   || { echo "This image supports linux/amd64 only." >&2; exit 1; }
