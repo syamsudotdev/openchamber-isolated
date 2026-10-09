@@ -59,6 +59,9 @@ if ! "$sdkmanager" "--sdk_root=$ANDROID_HOME" --install 'platforms;android-36' '
   exit 1
 fi
 
+# SDK package executables must also be available to the runtime node user.
+chmod -R a+rX "$ANDROID_HOME"
+
 # These run only during image construction, not during container startup.
 "$JAVA_HOME/bin/java" -version
 "$JAVA_HOME/bin/javac" -version
