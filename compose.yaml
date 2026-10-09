@@ -24,6 +24,7 @@ services:
     tmpfs:
       - /tmp:rw,exec,nosuid,nodev,size=${OPENCODE_TMP_SIZE:-1g}
       - /run:rw,nosuid,nodev,size=${OPENCODE_RUN_SIZE:-1g}
+      - /opt/android-sdk/.sdk:rw,nosuid,nodev,uid=1000,gid=1000,mode=0755
     volumes:
       - opencode-home:/home/node
       - ${OPENCODE_CACHE:-./cache}:/home/node/.cache

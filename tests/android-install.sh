@@ -166,7 +166,8 @@ case "$2" in
     mkdir -p "$EXPECTED_SDK/platforms/android-36" "$EXPECTED_SDK/build-tools/37.0.0"
     printf '%s\n' 'fixed API36 platform' > "$EXPECTED_SDK/platforms/android-36/android.jar"
     cp "$SMOKE_FIXTURE" "$EXPECTED_SDK/build-tools/37.0.0/aapt2"
-    chmod +x "$EXPECTED_SDK/build-tools/37.0.0/aapt2"
+    # Reproduce the SDK package's owner-only execute permission.
+    chmod 0744 "$EXPECTED_SDK/build-tools/37.0.0/aapt2"
     # Remove a fixed fixture path to test an actual missing executable.
     case "${MISSING_SMOKE:-}" in
       java|javac) rm "$EXPECTED_JAVA/bin/$MISSING_SMOKE" ;;
@@ -214,6 +215,10 @@ sh "$installer"
 for executable in "$JAVA_HOME/bin/java" "$JAVA_HOME/bin/javac" "$EXPECTED_CLI" "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" "$ANDROID_HOME/platform-tools/adb" "$ANDROID_HOME/build-tools/37.0.0/aapt2"; do
   [ -x "$executable" ] || fail "missing executable: $executable"
 done
+[ "$(stat -c %a "$ANDROID_HOME/build-tools/37.0.0/aapt2")" = 755 ] || fail 'aapt2 must be executable by non-owner users without added write permission'
+[ -z "$(find "$ANDROID_HOME" -type d ! -perm -0005 -print)" ] || fail 'SDK directories must be readable and traversable by non-owner users'
+[ -z "$(find "$ANDROID_HOME" -type f ! -perm -0004 -print)" ] || fail 'SDK files must be readable by non-owner users'
+[ -z "$(find "$ANDROID_HOME" -perm -0002 -print)" ] || fail 'SDK must not be writable by other users'
 cmp "$JAVA_HOME/bin/java" "$SMOKE_FIXTURE" || fail 'wrong JDK layout'
 cmp "$EXPECTED_CLI" "$SMOKE_FIXTURE" || fail 'wrong CLI artifact'
 [ "$(cat "$ANDROID_HOME/platforms/android-36/android.jar")" = 'fixed API36 platform' ] || fail 'wrong platform'

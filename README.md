@@ -143,6 +143,7 @@ opencode.jsonc                Bundled OpenCode configuration
 install-android.sh            Java and Android tool installer
 tests/bootstrap.sh            Isolated bootstrap tests
 tests/android-install.sh      Isolated Android installer tests
+tests/android-runtime.sh      Disposable Android runtime checks
 openchamber.service.example   Optional systemd user service
 ```
 
@@ -239,9 +240,9 @@ Building the image accepts the Android SDK licenses through `sdkmanager`. The us
 
 The command-line tools and platform-tools archives use fixed release URLs and Google's published SHA1 checksums. The Android CLI uses the official mutable `latest` download and has no official immutable digest for this baseline. `platforms;android-36` selects an API level, not a fixed package revision. Its revision can change between builds. These downloads prevent full reproducibility.
 
-The SDK stays on the read-only image filesystem. No writable SDK mount is configured. Change the installer and rebuild the image to update Java or SDK packages. Do not install SDK updates into `/opt/android-sdk` at runtime. Emulator, NDK, CMake, AVD configuration, and device authentication data are not bundled.
+The SDK packages stay on the read-only image filesystem. Compose mounts only `/opt/android-sdk/.sdk` as writable temporary state with `rw,nosuid,nodev,uid=1000,gid=1000,mode=0755`. The Android CLI needs this directory for its SDK lock and state files. This state does not persist across container replacement. Change the installer and rebuild the image to update Java or SDK packages. Do not install SDK updates into `/opt/android-sdk` at runtime. Emulator, NDK, CMake, AVD configuration, and device authentication data are not bundled.
 
-The official Android CLI download is a binary downloader. The official installer forces its first download by running that binary without arguments with `ANDROID_CLI_FRESH_INSTALL=1`. This image does not run that initialization or relocate its payload. The payload location, path overrides, and whether `android -V` writes files remain unverified. The CLI may require a first download at runtime. It cannot update an immutable read-only installation path in place.
+The official Android CLI download is a binary downloader. This image does not initialize its payload during installation. The first launch with a fresh writable home downloads the payload and requires network access. The tools are not fully preinstalled for offline use. A user-confirmed runtime check passed as `node` with a writable home, a read-only root filesystem, and the writable `.sdk` temporary filesystem. The CLI cannot update an immutable read-only installation path in place.
 
 Image construction runs `java -version`, `javac -version`, `android -V`, `sdkmanager --sdk_root=/opt/android-sdk --version`, `adb version`, and `aapt2 version`. It also checks that `avdmanager` is executable. These checks fail the build when a command fails. The `android -V` check is not proof that the CLI works as `node` with mounted home storage and a read-only root filesystem. Disposable image testing is still required.
 
@@ -261,7 +262,7 @@ security_opt:
   - no-new-privileges:true
 ```
 
-The root filesystem remains read-only. A Docker named volume makes `/home/node` writable. The container uses temporary filesystems for `/tmp` and `/run`. It uses bind mounts for the plugin cache, workspace, OpenCode configuration, and OpenCode data. The plugin cache permits downloaded plugin code to run.
+The root filesystem remains read-only. A Docker named volume makes `/home/node` writable. The container uses temporary filesystems for `/tmp`, `/run`, and Android SDK state at `/opt/android-sdk/.sdk`. SDK packages remain read-only. It uses bind mounts for the plugin cache, workspace, OpenCode configuration, and OpenCode data. The plugin cache permits downloaded plugin code to run.
 
 ## Update Versions
 
@@ -331,6 +332,21 @@ Build the local image:
 ```bash
 docker compose build
 ```
+
+Build and test a disposable Android runtime image:
+
+```bash
+docker build --platform linux/amd64 -t openchamber-verify .
+sh tests/android-runtime.sh
+```
+
+The Dockerfile defaults `TARGETARCH` to `amd64` for legacy builders. No `--progress` option is required. To test another image, pass its exact name as the first argument:
+
+```bash
+sh tests/android-runtime.sh opencode-local:latest
+```
+
+The runtime test uses host networking, a read-only root filesystem, user `node`, dropped capabilities, and the writable `.sdk` state exception. It checks Java, Android CLI startup twice, SDK target listing, ADB and build-tool versions, API 36 files, build-tools 37.0.0, and `android --sdk="$ANDROID_HOME" sdk list`. Each run uses a fresh anonymous `/home/node` volume. Docker removes the volume with `--rm`. The first CLI launch downloads its payload and needs network access. The test does not install SDK packages, start OpenChamber, or check ADB server connectivity.
 
 Open a shell without the normal entry point:
 
