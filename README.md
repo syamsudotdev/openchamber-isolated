@@ -20,6 +20,8 @@ Install these tools:
 
 Use a Linux host for the documented user-namespace procedure.
 
+The image supports `linux/amd64` only. The build rejects other architectures before tool downloads. Full Android SDK support on `linux/arm64` is unverified.
+
 ## Quick Start
 
 Clone the repository. Then enter the project directory.
@@ -136,6 +138,11 @@ workspace/                    OpenCode workspace
 Dockerfile                    Container image definition
 compose.yaml                  Container runtime configuration
 entrypoint.sh                 Container startup script
+bootstrap/opencode/           Bundled agents, skills, and nested assets
+opencode.jsonc                Bundled OpenCode configuration
+install-android.sh            Java and Android tool installer
+tests/bootstrap.sh            Isolated bootstrap tests
+tests/android-install.sh      Isolated Android installer tests
 openchamber.service.example   Optional systemd user service
 ```
 
@@ -183,6 +190,65 @@ You can set these Compose variables in `.env`:
 
 Do not store credentials in this repository.
 
+### Bundled OpenCode Configuration
+
+The image bundles root `opencode.jsonc` and the files in `bootstrap/opencode/`. The bundle includes agents, skills, and their nested assets. Startup copies missing files recursively into `OPENCODE_CONFIG_DIR`.
+
+Startup preserves every existing destination. It does not replace user files, directories, or file symlinks, including dangling symlinks. A directory symlink or a file that blocks a required directory stops startup with an error. Startup does not follow destination directory symlinks. Do not change configuration paths concurrently with startup.
+
+Rebuilding changes the image bundle. It does not replace existing files in mounted configuration. New bundled files are added on the next startup. To adopt an updated bundled file, back up the mounted file and remove only that file before startup. The next startup copies the image version.
+
+`OPENCODE_BOOTSTRAP_DIR` can override the source directory for isolated tests. Its default is `/opt/bootstrap/opencode`. Use only a trusted source directory. Bundled symlinks and special files are not supported.
+
+The bundle excludes secrets and provider authentication state. Configure provider authentication in persistent application storage at runtime. Do not copy host credentials into the image. The bundled skills are a snapshot, not proof of their original authorship, license, or current upstream version. Verify uncertain provenance and license terms before redistribution.
+
+Known snapshot limitations remain. Bundled `AGENTS.md` requires an `rtk` skill, but no approved source was found. Installing the RTK executable does not provide that skill. The vendored codemap script mishandles `.gitignore` negation rules. This preexisting snapshot issue is not fixed here.
+
+### Bundled Command-Line Tools
+
+The image installs `uv` and `uvx` 0.12.19, RTK 0.23.0, and `fff-mcp` 0.11.0 in `/usr/local/bin`. `install-tools.sh` supports release assets for Docker `TARGETARCH=amd64` or `arm64`, but the complete image accepts only `amd64` because of the Android SDK. The installer verifies fixed SHA256 checksums before extraction or installation. To update a tool, update its release URL and both architecture checksums together.
+
+The release URLs and checksums came from the respective GitHub release APIs. `uv` 0.12.19 matches the verified host version. RTK 0.23.0 meets the plugin minimum; RTK was absent on the inspected host. `fff-mcp` 0.11.0 is a new pinned baseline, not a verified match to the host binary.
+
+The bundled configuration pins `oh-my-opencode-slim@2.2.25`. OpenCode still downloads the plugin at runtime. The image does not contain an offline plugin bundle. Plugin transitive dependencies and other runtime downloads can change and require network access. Other optional tools mentioned by skills are not installed unless listed here. Plannotator is not installed.
+
+### Java and Android Tools
+
+The image preinstalls these tools through `install-android.sh`:
+
+| Tool | Version or SDK package | Location |
+| --- | --- | --- |
+| Eclipse Temurin JDK | `25.0.4.1+1` | `/opt/temurin-25` |
+| Official Android CLI | Mutable `latest` | `/opt/android-cli/bin/android` |
+| Android command-line tools | `23.0` | `/opt/android-sdk/cmdline-tools/latest` |
+| Android platform-tools | `37.0.1` | `/opt/android-sdk/platform-tools` |
+| Android API platform | `platforms;android-36` | `/opt/android-sdk/platforms/android-36` |
+| Android build-tools | `build-tools;37.0.0` | `/opt/android-sdk/build-tools/37.0.0` |
+
+`JAVA_HOME=/opt/temurin-25`. Both `ANDROID_HOME` and `ANDROID_SDK_ROOT` equal `/opt/android-sdk`. The image prepends these directories to `PATH`, in this order:
+
+```text
+/opt/android-cli/bin
+/opt/temurin-25/bin
+/opt/android-sdk/cmdline-tools/latest/bin
+/opt/android-sdk/platform-tools
+/opt/android-sdk/build-tools/37.0.0
+```
+
+Building the image accepts the Android SDK licenses through `sdkmanager`. The user explicitly authorized this acceptance. Review the [Android SDK License Agreement](https://developer.android.com/studio/terms) before building or distributing the image.
+
+The command-line tools and platform-tools archives use fixed release URLs and Google's published SHA1 checksums. The Android CLI uses the official mutable `latest` download and has no official immutable digest for this baseline. `platforms;android-36` selects an API level, not a fixed package revision. Its revision can change between builds. These downloads prevent full reproducibility.
+
+The SDK stays on the read-only image filesystem. No writable SDK mount is configured. Change the installer and rebuild the image to update Java or SDK packages. Do not install SDK updates into `/opt/android-sdk` at runtime. Emulator, NDK, CMake, AVD configuration, and device authentication data are not bundled.
+
+The official Android CLI download is a binary downloader. The official installer forces its first download by running that binary without arguments with `ANDROID_CLI_FRESH_INSTALL=1`. This image does not run that initialization or relocate its payload. The payload location, path overrides, and whether `android -V` writes files remain unverified. The CLI may require a first download at runtime. It cannot update an immutable read-only installation path in place.
+
+Image construction runs `java -version`, `javac -version`, `android -V`, `sdkmanager --sdk_root=/opt/android-sdk --version`, `adb version`, and `aapt2 version`. It also checks that `avdmanager` is executable. These checks fail the build when a command fails. The `android -V` check is not proof that the CLI works as `node` with mounted home storage and a read-only root filesystem. Disposable image testing is still required.
+
+Java 25 requires a compatible Gradle wrapper and Android build configuration. Do not assume that every Android project can run with this Java version.
+
+Compose sets `ADB_SERVER_SOCKET=tcp:host.docker.internal:5037` for the existing remote ADB server. The bundled `adb` client uses that endpoint. The image does not start or configure the host ADB server. Device access depends on that server's connectivity and authorization. This feature does not change Compose bindings or the endpoint.
+
 ## Security Model
 
 The Compose service keeps these controls:
@@ -202,8 +268,8 @@ The root filesystem remains read-only. A Docker named volume makes `/home/node` 
 Change these build arguments in `Dockerfile`:
 
 ```dockerfile
-ARG OPENCODE_VERSION=2.0.18
-ARG OPENCHAMBER_VERSION=2.0.3
+ARG OPENCODE_VERSION=2.0.25
+ARG OPENCHAMBER_VERSION=2.1.1
 ```
 
 Then rebuild the image:
@@ -211,6 +277,8 @@ Then rebuild the image:
 ```bash
 docker compose build --no-cache
 ```
+
+These package pins do not make the whole image reproducible. The `node:24-bookworm-slim` tag and apt repositories can change. Package dependencies and runtime downloads can also change. Builds require network access. The host network configuration still controls connectivity and exposure; container restrictions do not make network services private.
 
 ## Troubleshooting
 
@@ -245,6 +313,18 @@ docker compose config
 ```
 
 ## Development
+
+Run the narrow startup tests without Docker:
+
+```bash
+sh tests/bootstrap.sh
+sh tests/install-tools.sh
+sh tests/android-install.sh
+```
+
+The tests use temporary configuration, data, and cache directories. They use a stub `openchamber` command and fixed example contents. They do not validate Docker builds or the running applications.
+
+The installer tests use download, checksum, extraction, and installation stubs. They check fixed release URLs and checksums, unsupported architectures, checksum rejection, and failed-download cleanup. They do not download or execute release binaries or write to live `/usr/local/bin`.
 
 Build the local image:
 

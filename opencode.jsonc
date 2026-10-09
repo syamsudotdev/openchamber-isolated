@@ -6,5 +6,37 @@
       "resource": "*",
       "effect": "allow"
     }
-  ]
+  ],
+  "plugin": [
+    "oh-my-opencode-slim@2.2.25"
+  ],
+  "agents": {
+    "build": {
+      "disabled": true
+    },
+    "plan": {
+      "disabled": true
+    },
+    "explore": {
+      "disabled": true
+    },
+    "general": {
+      "disabled": true
+    }
+  },
+  "lsp": true,
+  "mcp": {
+    "servers": {
+      "fff": {
+        "type": "local",
+        "command": [
+          "/usr/local/bin/fff-mcp"
+        ]
+      }
+    }
+  },
+  "warming": true,
+  "websearch": {
+    "provider": "random"
+  }
 }

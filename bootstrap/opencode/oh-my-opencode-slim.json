@@ -1,0 +1,146 @@
+{
+  "$schema": "https://unpkg.com/oh-my-opencode-slim@latest/oh-my-opencode-slim.schema.json",
+  "preset": "openai",
+  "presets": {
+    "openai": {
+      "orchestrator": {
+        "model": "openai/gpt-6.1-sol",
+        "variant": "medium",
+        "skills": [
+          "*"
+        ],
+        "mcps": [
+          "*",
+          "!context7"
+        ]
+      },
+      "oracle": {
+        "model": "openai/gpt-6.1-sol",
+        "variant": "high",
+        "skills": [
+          "simplify",
+          "data-layer-footguns",
+          "desktop-and-build-footguns",
+          "engineering-method-footguns",
+          "kmp-architecture-footguns",
+          "media-playback-footguns",
+          "remote-api-footguns",
+          "state-and-background-footguns"
+        ],
+        "mcps": []
+      },
+      "librarian": {
+        "model": "openai/gpt-5.6-terra",
+        "variant": "medium",
+        "skills": [],
+        "mcps": [
+          "context7",
+          "gh_grep"
+        ]
+      },
+      "explorer": {
+        "model": "openai/gpt-6-luna",
+        "variant": "low",
+        "skills": [],
+        "mcps": []
+      },
+      "designer": {
+        "model": "openai/gpt-6.1-sol",
+        "variant": "medium",
+        "skills": [
+          "compose-screens-footguns",
+          "compose-visuals-footguns"
+        ],
+        "mcps": []
+      },
+      "fixer": {
+        "model": "openai/gpt-6.1-sol",
+        "variant": "medium",
+        "skills": [
+          "compose-screens-footguns",
+          "compose-visuals-footguns",
+          "data-layer-footguns",
+          "desktop-and-build-footguns",
+          "engineering-method-footguns",
+          "kmp-architecture-footguns",
+          "media-playback-footguns",
+          "remote-api-footguns",
+          "state-and-background-footguns"
+        ],
+        "mcps": []
+      }
+    },
+    "opencode-go": {
+      "orchestrator": {
+        "model": "opencode-go/minimax-m3",
+        "variant": "thinking",
+        "skills": [
+          "*"
+        ],
+        "mcps": [
+          "*",
+          "!context7"
+        ]
+      },
+      "oracle": {
+        "model": "opencode-go/qwen3.7-max",
+        "variant": "max",
+        "skills": [
+          "simplify",
+          "data-layer-footguns",
+          "desktop-and-build-footguns",
+          "engineering-method-footguns",
+          "kmp-architecture-footguns",
+          "media-playback-footguns",
+          "remote-api-footguns",
+          "state-and-background-footguns"
+        ],
+        "mcps": []
+      },
+      "explorer": {
+        "model": "opencode-go/deepseek-v4-flash",
+        "variant": "high",
+        "skills": [],
+        "mcps": []
+      },
+      "librarian": {
+        "model": "opencode-go/deepseek-v4-flash",
+        "variant": "high",
+        "skills": [],
+        "mcps": [
+          "context7",
+          "gh_grep"
+        ]
+      },
+      "designer": {
+        "model": "opencode-go/kimi-k2.7-code",
+        "skills": [
+          "compose-screens-footguns",
+          "compose-visuals-footguns"
+        ],
+        "mcps": []
+      },
+      "fixer": {
+        "model": "opencode-go/deepseek-v4-flash",
+        "variant": "high",
+        "skills": [
+          "compose-screens-footguns",
+          "compose-visuals-footguns",
+          "data-layer-footguns",
+          "desktop-and-build-footguns",
+          "engineering-method-footguns",
+          "kmp-architecture-footguns",
+          "media-playback-footguns",
+          "remote-api-footguns",
+          "state-and-background-footguns"
+        ],
+        "mcps": []
+      },
+      "observer": {
+        "model": "opencode-go/mimo-v2.5",
+        "skills": [],
+        "mcps": []
+      }
+    }
+  }
+}

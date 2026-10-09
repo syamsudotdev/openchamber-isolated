@@ -12,14 +12,10 @@ services:
       - "127.0.0.1:3001:3001"
       - "127.0.0.1:5173:5173"
       - "127.0.0.1:8080:8080"
-      - "10.8.0.4:19432:19432"
     environment:
       ADB_SERVER_SOCKET: "tcp:host.docker.internal:5037"
       OPENCHAMBER_UI_PASSWORD: ${OPENCHAMBER_UI_PASSWORD:?Set OPENCHAMBER_UI_PASSWORD in .env}
       NPM_CONFIG_CACHE: /home/node/.cache/npm
-      PLANNOTATOR_REMOTE: "1"
-      PLANNOTATOR_PORT: "19432"
-      PLANNOTATOR_URL_HOST: "10.8.0.4"
     read_only: true
     security_opt:
       - no-new-privileges:true
