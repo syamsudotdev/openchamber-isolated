@@ -270,7 +270,7 @@ Change these build arguments in `Dockerfile`:
 
 ```dockerfile
 ARG OPENCODE_VERSION=2.0.25
-ARG OPENCHAMBER_VERSION=2.1.1
+ARG OPENCHAMBER_VERSION=2.2.0
 ```
 
 Then rebuild the image:
