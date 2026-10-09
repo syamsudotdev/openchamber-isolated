@@ -9,3 +9,7 @@
 !/entrypoint.sh
 !/openchamber.service.example
 !/opencode.jsonc
+!/bootstrap/
+!/tests/
+!/install-tools.sh
+!/install-android.sh
