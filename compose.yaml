@@ -5,11 +5,8 @@ services:
       context: .
       dockerfile: Dockerfile
     working_dir: /workspace
-    extra_hosts:
-      - "host.docker.internal:10.0.2.2"
     network_mode: host
     environment:
-      ADB_SERVER_SOCKET: "tcp:host.docker.internal:5037"
       OPENCHAMBER_UI_PASSWORD: ${OPENCHAMBER_UI_PASSWORD:?Set OPENCHAMBER_UI_PASSWORD in .env}
       NPM_CONFIG_CACHE: /home/node/.cache/npm
     read_only: true
