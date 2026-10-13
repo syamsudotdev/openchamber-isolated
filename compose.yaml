@@ -8,6 +8,7 @@ services:
     network_mode: host
     environment:
       OPENCHAMBER_UI_PASSWORD: ${OPENCHAMBER_UI_PASSWORD:?Set OPENCHAMBER_UI_PASSWORD in .env}
+      FIGMA_API_KEY: ${FIGMA_API_KEY:-}
       NPM_CONFIG_CACHE: /home/node/.cache/npm
     read_only: true
     security_opt:

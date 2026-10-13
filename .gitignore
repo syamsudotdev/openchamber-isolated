@@ -13,3 +13,5 @@
 !/tests/
 !/install-tools.sh
 !/install-android.sh
+!/adb-bind-policy/
+!/adb-bind-policy/**

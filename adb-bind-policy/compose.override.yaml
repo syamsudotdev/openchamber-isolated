@@ -1,0 +1,4 @@
+services:
+  opencode:
+    cgroup_parent: openchamber.slice
+    restart: "no"

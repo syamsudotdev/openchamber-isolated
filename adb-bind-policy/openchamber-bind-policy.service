@@ -1,0 +1,15 @@
+[Unit]
+Description=Prevent scoped OpenChamber TCP binds to host ADB port
+Requires=user@1000.service
+After=user@1000.service
+BindsTo=user@1000.service
+Before=openchamber-managed.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/libexec/openchamber-bind-policy start
+ExecStop=/usr/local/libexec/openchamber-bind-policy stop
+
+[Install]
+WantedBy=multi-user.target

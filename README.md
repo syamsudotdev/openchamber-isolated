@@ -85,6 +85,8 @@ Inspect the mapping on each Docker host. Do not assume that all hosts use `10099
 
 ## Run the Container
 
+Use this direct startup path only on hosts without the optional [ADB bind policy](adb-bind-policy/README.md). After adoption, use only the root systemd `openchamber-managed.service` to start or restart the container.
+
 Set `OPENCHAMBER_UI_PASSWORD` in `.env`. Then run the service:
 
 ```bash
@@ -94,6 +96,8 @@ docker compose up
 Do not use `OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN=true` on an untrusted network.
 
 ## Optional systemd User Service
+
+Use this user service only on hosts without the optional ADB bind policy. Do not run the user service and the managed root service as two controllers of the same container.
 
 The example user service starts Docker Compose and a Cloudflare tunnel. It does not require a root system service.
 
@@ -128,6 +132,16 @@ rm ~/.config/systemd/user/openchamber.service
 systemctl --user daemon-reload
 ```
 
+## Optional Host ADB Bind Policy
+
+Compose uses host networking. Reserve host TCP port `5037` for the host ADB server; the container must not bind that port.
+
+The approved [ADB bind policy](adb-bind-policy/README.md) uses cgroup BPF, a kernel program attached to a process group, to reject container binds to port `5037` while allowing outbound ADB connections. This optional startup path is specific to host user `syamsudotdev`, UID `1000`, and checkout `/home/syamsudotdev/Projects/openchamber-isolated`. A separate checkout at `/workspace/openchamber-isolated` does not change those host settings.
+
+Before adoption, stop and disable the old user Compose service if it is enabled. Do not stop an already protected container merely to repeat setup. Avoid two startup controllers. After adoption, start or restart only through the root systemd `openchamber-managed.service`; direct Docker Compose or user-service startup bypasses policy attachment.
+
+The installer is dormant: it does not enable the managed service. Follow the policy README to run the tests, then explicitly enable the service after verification. Host checks confirmed `EPERM` for explicit IPv4 and IPv6 binds to `5037`, `SUCCESS` for other binds, outbound ADB `OKAY`, and protection after container recreation. Reboot behavior remains untested.
+
 ## Directory Layout
 
 ```text
@@ -145,6 +159,7 @@ tests/bootstrap.sh            Isolated bootstrap tests
 tests/android-install.sh      Isolated Android installer tests
 tests/android-runtime.sh      Disposable Android runtime checks
 openchamber.service.example   Optional systemd user service
+adb-bind-policy/              Optional host ADB bind policy and managed service
 ```
 
 ## Writable Home Storage
@@ -179,6 +194,7 @@ The image defines these main paths:
 You can set these Compose variables in `.env`:
 
 - `OPENCHAMBER_UI_PASSWORD` (required)
+- `FIGMA_API_KEY` (optional; add it to `.env` for the Figma integration; defaults to an empty value)
 - `OPENCODE_CACHE`
 - `OPENCODE_WORKSPACE`
 - `OPENCODE_CONFIG`
@@ -248,7 +264,7 @@ Image construction runs `java -version`, `javac -version`, `android -V`, `sdkman
 
 Java 25 requires a compatible Gradle wrapper and Android build configuration. Do not assume that every Android project can run with this Java version.
 
-Compose sets `ADB_SERVER_SOCKET=tcp:host.docker.internal:5037` for the existing remote ADB server. The bundled `adb` client uses that endpoint. The image does not start or configure the host ADB server. Device access depends on that server's connectivity and authorization. This feature does not change Compose bindings or the endpoint.
+The image does not start or configure the host ADB server. Configure the bundled `adb` client for the existing server as needed. Device access depends on that server's connectivity and authorization. With host networking, reserve port `5037` for the host server. See the [optional host ADB bind policy](adb-bind-policy/README.md) to enforce this reservation for the managed container.
 
 ## Security Model
 
@@ -269,8 +285,8 @@ The root filesystem remains read-only. A Docker named volume makes `/home/node` 
 Change these build arguments in `Dockerfile`:
 
 ```dockerfile
-ARG OPENCODE_VERSION=2.0.25
-ARG OPENCHAMBER_VERSION=2.2.0
+ARG OPENCODE_VERSION=2.0.28
+ARG OPENCHAMBER_VERSION=2.3.1
 ```
 
 Then rebuild the image:
