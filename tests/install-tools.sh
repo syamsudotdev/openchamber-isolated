@@ -19,7 +19,7 @@ set -eu
 [ "$9" = --max-time ] && [ "${10}" = 180 ] && [ "${11}" = --output ]
 file=${12}; url=${13}
 name=${file##*/}
-grep -Fx "$name $url" "$EXPECTED_URLS" >/dev/null
+grep -Fx "$name $url" "$EXPECTED_URLS" >/dev/null || { printf 'Unexpected release URL: %s\n' "$url" >&2; exit 1; }
 printf 'curl %s\n' "$name" >> "$EVENTS"
 printf '%s\n' "stub download: $name" > "$file"
 [ "${FAIL_DOWNLOAD:-}" != "$name" ] || exit 22
@@ -31,7 +31,7 @@ set -eu
 [ "$1" = --check ] && [ "$2" = --status ]
 read -r hash file
 name=${file##*/}
-grep -Fx "$name $hash" "$EXPECTED_HASHES" >/dev/null
+grep -Fx "$name $hash" "$EXPECTED_HASHES" >/dev/null || { printf 'Unexpected checksum for %s: %s\n' "$name" "$hash" >&2; exit 1; }
 [ -f "$file" ]
 printf 'sha %s\n' "$name" >> "$EVENTS"
 [ "${FAIL_CHECKSUM:-}" != "$name" ] || exit 1
@@ -47,12 +47,16 @@ shift 4
 for member do
   # These members are fixed test fixtures, independent of installer variables.
   case "$TARGETARCH:$member" in
-    amd64:uv-x86_64-unknown-linux-gnu/uv|amd64:uv-x86_64-unknown-linux-gnu/uvx|amd64:rtk) ;;
-    arm64:uv-aarch64-unknown-linux-gnu/uv|arm64:uv-aarch64-unknown-linux-gnu/uvx|arm64:rtk) ;;
+    amd64:uv-x86_64-unknown-linux-gnu/uv|amd64:uv-x86_64-unknown-linux-gnu/uvx|amd64:rtk|amd64:LICENSE) ;;
+    arm64:uv-aarch64-unknown-linux-gnu/uv|arm64:uv-aarch64-unknown-linux-gnu/uvx|arm64:rtk|arm64:LICENSE) ;;
     *) printf 'Unexpected archive member for %s: %s\n' "$TARGETARCH" "$member" >&2; exit 1 ;;
   esac
   mkdir -p "$directory/$(dirname "$member")"
-  printf 'stub executable: %s\n' "${member##*/}" > "$directory/$member"
+  case "$member" in
+    LICENSE) printf '%s\n' 'Apache License' 'Version 2.0, January 2004' > "$directory/$member" ;;
+    *) printf 'stub executable: %s\n' "${member##*/}" > "$directory/$member" ;;
+  esac
+  printf 'extract %s\n' "$member" >> "$EVENTS"
 done
 printf '%s\n' tar >> "$EVENTS"
 SH
@@ -60,12 +64,16 @@ SH
 cat > "$temporary/bin/install" <<'SH'
 #!/bin/sh
 set -eu
-[ "$1" = -m ] && [ "$2" = 0755 ]
+[ "$1" = -m ]
 [ "$(grep -c '^sha ' "$EVENTS")" = 3 ]
 [ "$(grep -c '^tar$' "$EVENTS")" = 2 ]
-case "$4" in "$DESTINATION"/*) ;; *) exit 1 ;; esac
+case "$4" in
+  "$LICENSE_DESTINATION/LICENSE") [ "$2" = 0644 ] ;;
+  "$DESTINATION"/*) [ "$2" = 0755 ] ;;
+  *) exit 1 ;;
+esac
 cp "$3" "$4"
-chmod 0755 "$4"
+chmod "$2" "$4"
 printf 'install %s\n' "${4##*/}" >> "$EVENTS"
 SH
 chmod +x "$temporary/bin/"*
@@ -74,7 +82,8 @@ export EVENTS="$temporary/events"
 export EXPECTED_URLS="$temporary/urls"
 export EXPECTED_HASHES="$temporary/hashes"
 export TMPDIR="$temporary/scratch"
-export DESTINATION="$temporary/destination"
+export DESTINATION="$temporary/prefix/bin"
+export LICENSE_DESTINATION="$temporary/prefix/share/licenses/rtk"
 
 # Fixed release examples come from the approved release evidence, not the installer.
 examples() {
@@ -82,24 +91,24 @@ examples() {
     amd64)
       cat > "$EXPECTED_URLS" <<'EOF'
 uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.12.19/uv-x86_64-unknown-linux-gnu.tar.gz
-rtk.tar.gz https://github.com/rtk-ai/rtk/releases/download/v0.23.0/rtk-x86_64-unknown-linux-musl.tar.gz
+rtk.tar.gz https://github.com/rtk-ai/rtk/releases/download/v1.0.0/rtk-oss-x86_64-unknown-linux-musl.tar.gz
 fff-mcp https://github.com/dmtrKovalenko/fff/releases/download/v0.11.0/fff-mcp-x86_64-unknown-linux-musl
 EOF
       cat > "$EXPECTED_HASHES" <<'EOF'
 uv.tar.gz 23bf5552d220e0842b65c862097b2ebaeba0064b74eda5e565e77fd25969d8c8
-rtk.tar.gz d19762b5e4aec8f13d5da25631f03bc6ac672d5fec8d67dff704e8c92182e2c9
+rtk.tar.gz 9a0f4f8240a0701d9c409dcd9afc1f6f1e8625d55299d84af17fcd26d0b70600
 fff-mcp d1e8671f40c89c445aaa1728a21ec04b74be2e5f99091485caeabcc97f99aceb
 EOF
       ;;
     arm64)
       cat > "$EXPECTED_URLS" <<'EOF'
 uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.12.19/uv-aarch64-unknown-linux-gnu.tar.gz
-rtk.tar.gz https://github.com/rtk-ai/rtk/releases/download/v0.23.0/rtk-aarch64-unknown-linux-gnu.tar.gz
+rtk.tar.gz https://github.com/rtk-ai/rtk/releases/download/v1.0.0/rtk-oss-aarch64-unknown-linux-gnu.tar.gz
 fff-mcp https://github.com/dmtrKovalenko/fff/releases/download/v0.11.0/fff-mcp-aarch64-unknown-linux-musl
 EOF
       cat > "$EXPECTED_HASHES" <<'EOF'
 uv.tar.gz 0804e9b164c64b6914182d5920c08551958a095986f10a3731056df701126436
-rtk.tar.gz 49beb391151f696e0b30c60593cf571afed9ba4e868656633200a8b10bd3c482
+rtk.tar.gz 318d1b3b8438a260762f2a5b050bd5a61ebaa7bec13f37c475ca1d6372a3b61d
 fff-mcp 35f8e05d6c865266bf451d13bfa5e1b0d98438fda7dc1c9bdbc1c6a83484577d
 EOF
       ;;
@@ -107,7 +116,7 @@ EOF
 }
 
 reset_case() {
-  rm -rf "$TMPDIR" "$DESTINATION"
+  rm -rf "$TMPDIR" "$temporary/prefix"
   mkdir "$TMPDIR"
   : > "$EVENTS"
   unset FAIL_CHECKSUM FAIL_DOWNLOAD
@@ -129,15 +138,19 @@ for TARGETARCH in amd64 arm64; do
     [ "$(cat "$DESTINATION/$name")" = "stub executable: $name" ] || fail "wrong installed contents: $name"
   done
   [ "$(cat "$DESTINATION/fff-mcp")" = 'stub download: fff-mcp' ] || fail 'wrong installed contents: fff-mcp'
+  [ -f "$LICENSE_DESTINATION/LICENSE" ] || fail 'missing RTK license'
+  [ "$(cat "$LICENSE_DESTINATION/LICENSE")" = "$(printf '%s\n' 'Apache License' 'Version 2.0, January 2004')" ] || fail 'wrong RTK license contents'
+  [ "$(stat -c '%a' "$LICENSE_DESTINATION/LICENSE")" = 644 ] || fail 'wrong RTK license permissions'
+  [ "$(grep -c '^extract LICENSE$' "$EVENTS")" = 1 ] || fail 'wrong license extraction count'
   [ "$(grep -c '^curl ' "$EVENTS")" = 3 ] || fail 'wrong download count'
-  [ "$(grep -c '^install ' "$EVENTS")" = 4 ] || fail 'wrong install count'
+  [ "$(grep -c '^install ' "$EVENTS")" = 5 ] || fail 'wrong install count'
   check_cleanup
 
   for asset in uv.tar.gz rtk.tar.gz fff-mcp; do
     reset_case
     export FAIL_CHECKSUM="$asset"
     if sh "$installer" "$DESTINATION"; then fail "checksum rejection ignored: $asset"; fi
-    [ ! -e "$DESTINATION" ] || fail 'installed before all checksums passed'
+    [ ! -e "$temporary/prefix" ] || fail 'installed before all checksums passed'
     if grep -E '^(tar|install)' "$EVENTS" >/dev/null; then fail 'extracted before verification'; fi
     check_cleanup
   done
@@ -145,7 +158,7 @@ for TARGETARCH in amd64 arm64; do
   reset_case
   export FAIL_DOWNLOAD=rtk.tar.gz
   if sh "$installer" "$DESTINATION"; then fail 'download failure ignored'; fi
-  [ ! -e "$DESTINATION" ] || fail 'installed after download failure'
+  [ ! -e "$temporary/prefix" ] || fail 'installed after download failure'
   check_cleanup
 done
 

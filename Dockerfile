@@ -1,7 +1,7 @@
 FROM node:24-bookworm-slim
 
 ARG OPENCODE_VERSION=2.0.28
-ARG OPENCHAMBER_VERSION=2.3.1
+ARG OPENCHAMBER_VERSION=2.3.2
 ARG TARGETARCH=amd64
 
 RUN test "${TARGETARCH}" = amd64 \
@@ -23,13 +23,15 @@ RUN apt-get update \
     unzip \
   && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g \
+RUN node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 24 || (major === 24 && minor < 14)) { console.error("Node >=24.14.0 is required."); process.exit(1); }' \
+  && npm install -g \
     "@opencode/cli@${OPENCODE_VERSION}" \
     "@openchamber/web@${OPENCHAMBER_VERSION}" \
   && npm cache clean --force
 
 COPY install-tools.sh /opt/bootstrap/install-tools.sh
-RUN TARGETARCH="${TARGETARCH}" sh /opt/bootstrap/install-tools.sh
+RUN TARGETARCH="${TARGETARCH}" sh /opt/bootstrap/install-tools.sh \
+  && rtk hook opencode --help
 
 ENV JAVA_HOME=/opt/temurin-25
 ENV ANDROID_HOME=/opt/android-sdk
@@ -37,7 +39,8 @@ ENV ANDROID_SDK_ROOT=/opt/android-sdk
 ENV PATH="/opt/android-cli/bin:${JAVA_HOME}/bin:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/build-tools/37.0.0:${PATH}"
 
 COPY install-android.sh /opt/bootstrap/install-android.sh
-RUN TARGETARCH="${TARGETARCH}" sh /opt/bootstrap/install-android.sh
+RUN TARGETARCH="${TARGETARCH}" sh /opt/bootstrap/install-android.sh \
+  && chown -R node:node /opt/android-sdk
 
 RUN mkdir -p \
     /workspace \
