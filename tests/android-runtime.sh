@@ -47,27 +47,10 @@ test -f "$ANDROID_HOME/platforms/android-36/android.jar"
 test -d "$ANDROID_HOME/build-tools/37.0.0"
 android --sdk="$ANDROID_HOME" sdk list
 
-sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 if [ "$1" = install ]; then
     test ! -e "$ANDROID_HOME/build-tools/36.0.0"
     test ! -e "$ANDROID_HOME/platforms/android-37.0"
-    "$sdkmanager" --sdk_root="$ANDROID_HOME" --list > /tmp/sdk-packages.txt
-    for package in "build-tools;36.0.0" "platforms;android-37.0"; do
-        if ! awk -F "|" -v package="$package" '\''
-            /^Available Packages:/ { available = 1; next }
-            /^Available Updates:/ { available = 0 }
-            available {
-                name = $1
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
-                if (name == package) found = 1
-            }
-            END { exit !found }
-        '\'' /tmp/sdk-packages.txt; then
-            printf "FAIL: exact SDK package unavailable: %s\n" "$package" >&2
-            exit 1
-        fi
-    done
-    "$sdkmanager" --sdk_root="$ANDROID_HOME" "build-tools;36.0.0" "platforms;android-37.0"
+    android --sdk="$ANDROID_HOME" sdk install build-tools/36.0.0 platforms/android-37.0
     printf "%s\n" "android-runtime-persistence" > "$ANDROID_HOME/.runtime-marker"
 else
     test "$(cat "$ANDROID_HOME/.runtime-marker")" = android-runtime-persistence
