@@ -176,7 +176,7 @@ docker volume inspect openchamber-isolated_opencode-home
 
 The nested `cache/`, `config/`, and `data/` bind mounts continue to use the project directories. They override the related paths in the named volume.
 
-This command permanently removes the named home volume:
+This command permanently removes the named home and Android SDK volumes, including runtime-installed SDK packages:
 
 ```bash
 docker compose down -v
@@ -223,9 +223,11 @@ Known snapshot limitations remain. Bundled `AGENTS.md` requires an `rtk` skill, 
 
 ### Bundled Command-Line Tools
 
-The image installs `uv` and `uvx` 0.12.19, RTK 0.23.0, and `fff-mcp` 0.11.0 in `/usr/local/bin`. `install-tools.sh` supports release assets for Docker `TARGETARCH=amd64` or `arm64`, but the complete image accepts only `amd64` because of the Android SDK. The installer verifies fixed SHA256 checksums before extraction or installation. To update a tool, update its release URL and both architecture checksums together.
+The image pins OpenChamber 2.3.2 and OpenCode 2.0.28. The build requires Node >=24.14.0 before npm installation. The image installs `uv` and `uvx` 0.12.19, RTK OSS 1.0.0, and `fff-mcp` 0.11.0 in `/usr/local/bin`. `install-tools.sh` supports release assets for Docker `TARGETARCH=amd64` or `arm64`, but the complete image accepts only `amd64` because of the Android SDK. The installer verifies fixed SHA256 checksums before extraction or installation. To update a tool, update its release URL and both architecture checksums together.
 
-The release URLs and checksums came from the respective GitHub release APIs. `uv` 0.12.19 matches the verified host version. RTK 0.23.0 meets the plugin minimum; RTK was absent on the inspected host. `fff-mcp` 0.11.0 is a new pinned baseline, not a verified match to the host binary.
+The release URLs and checksums came from the respective GitHub release APIs. `uv` 0.12.19 matches the verified host version. RTK uses the `rtk-oss` release assets under the Apache License 2.0, not the commercial edition. The image retains the archive's `LICENSE` at `/usr/local/share/licenses/rtk/LICENSE` with mode `0644`. The build checks that `rtk hook opencode --help` succeeds. This help check does not install a hook or modify user configuration. `fff-mcp` 0.11.0 is a new pinned baseline, not a verified match to the host binary.
+
+The bundled `bootstrap/opencode/plugins/rtk.ts` uses the official released RTK OpenCode V2 plugin. Startup preserves an existing mounted `plugins/rtk.ts`; rebuilding alone does not replace it. On the host, back up that mounted file before you explicitly replace it with the bundled version, or remove only that file to let startup copy the bundled version. Then restart through the existing startup controller. If the ADB bind policy is active, follow its managed restart procedure and use only `openchamber-managed.service`. Do not bypass the policy with a direct Compose restart. The upgrade does not automatically overwrite the plugin or modify user configuration. No RTK-specific Compose change is required.
 
 The bundled configuration pins `oh-my-opencode-slim@2.2.25`. OpenCode still downloads the plugin at runtime. The image does not contain an offline plugin bundle. Plugin transitive dependencies and other runtime downloads can change and require network access. Other optional tools mentioned by skills are not installed unless listed here. Plannotator is not installed.
 
@@ -256,9 +258,11 @@ Building the image accepts the Android SDK licenses through `sdkmanager`. The us
 
 The command-line tools and platform-tools archives use fixed release URLs and Google's published SHA1 checksums. The Android CLI uses the official mutable `latest` download and has no official immutable digest for this baseline. `platforms;android-36` selects an API level, not a fixed package revision. Its revision can change between builds. These downloads prevent full reproducibility.
 
-The SDK packages stay on the read-only image filesystem. Compose mounts only `/opt/android-sdk/.sdk` as writable temporary state with `rw,nosuid,nodev,uid=1000,gid=1000,mode=0755`. The Android CLI needs this directory for its SDK lock and state files. This state does not persist across container replacement. Change the installer and rebuild the image to update Java or SDK packages. Do not install SDK updates into `/opt/android-sdk` at runtime. Emulator, NDK, CMake, AVD configuration, and device authentication data are not bundled.
+Compose mounts the writable `android-sdk` named volume at `/opt/android-sdk`. Docker copies the image SDK contents into a fresh empty volume on first use. The image assigns the SDK to `node:node`, so the seeded volume permits SDK installation and updates as `node` without world-writable permissions. Both Android environment variables continue to point to `/opt/android-sdk`. SDK packages and SDK lock and state files persist across container replacement.
 
-The official Android CLI download is a binary downloader. This image does not initialize its payload during installation. The first launch with a fresh writable home downloads the payload and requires network access. The tools are not fully preinstalled for offline use. A user-confirmed runtime check passed as `node` with a writable home, a read-only root filesystem, and the writable `.sdk` temporary filesystem. The CLI cannot update an immutable read-only installation path in place.
+An existing SDK volume masks the image SDK directory, including SDK changes from later image builds. Rebuilding the image does not refresh that volume. Update packages in the volume with SDK `sdkmanager`, or back up needed data and remove the SDK volume before reseeding it from the new image. Deleting the volume loses runtime-installed packages and SDK state. Java, the Android CLI installation, and other `/opt` tools remain on the read-only root filesystem; change the installer and rebuild the image to update them. Emulator, NDK, CMake, AVD configuration, and device authentication data are not bundled.
+
+The official Android CLI download is a binary downloader. This image does not initialize its payload during installation. The first launch with a fresh writable home downloads the payload and requires network access. The tools are not fully preinstalled for offline use. Runtime verification of the writable SDK volume is still required. The CLI cannot update its own read-only installation path in place.
 
 Image construction runs `java -version`, `javac -version`, `android -V`, `sdkmanager --sdk_root=/opt/android-sdk --version`, `adb version`, and `aapt2 version`. It also checks that `avdmanager` is executable. These checks fail the build when a command fails. The `android -V` check is not proof that the CLI works as `node` with mounted home storage and a read-only root filesystem. Disposable image testing is still required.
 
@@ -278,7 +282,7 @@ security_opt:
   - no-new-privileges:true
 ```
 
-The root filesystem remains read-only. A Docker named volume makes `/home/node` writable. The container uses temporary filesystems for `/tmp`, `/run`, and Android SDK state at `/opt/android-sdk/.sdk`. SDK packages remain read-only. It uses bind mounts for the plugin cache, workspace, OpenCode configuration, and OpenCode data. The plugin cache permits downloaded plugin code to run.
+The root filesystem remains read-only. Docker named volumes make `/home/node` and `/opt/android-sdk` writable. The container uses temporary filesystems for `/tmp` and `/run`. Other `/opt` tools remain read-only. It uses bind mounts for the plugin cache, workspace, OpenCode configuration, and OpenCode data. The plugin cache and SDK volume permit downloaded code to run.
 
 ## Update Versions
 
@@ -286,7 +290,7 @@ Change these build arguments in `Dockerfile`:
 
 ```dockerfile
 ARG OPENCODE_VERSION=2.0.28
-ARG OPENCHAMBER_VERSION=2.3.1
+ARG OPENCHAMBER_VERSION=2.3.2
 ```
 
 Then rebuild the image:
@@ -337,11 +341,12 @@ Run the narrow startup tests without Docker:
 sh tests/bootstrap.sh
 sh tests/install-tools.sh
 sh tests/android-install.sh
+node --test tests/rtk-plugin.mjs
 ```
 
 The tests use temporary configuration, data, and cache directories. They use a stub `openchamber` command and fixed example contents. They do not validate Docker builds or the running applications.
 
-The installer tests use download, checksum, extraction, and installation stubs. They check fixed release URLs and checksums, unsupported architectures, checksum rejection, and failed-download cleanup. They do not download or execute release binaries or write to live `/usr/local/bin`.
+The installer tests use download, checksum, extraction, and installation stubs. They check fixed release URLs and checksums, RTK license extraction and installation, license contents and permissions, unsupported architectures, checksum rejection, and failed-download cleanup. They do not download or execute release binaries or write to live `/usr/local`. The plugin tests use a fake RTK process; they do not execute the live RTK binary.
 
 Build the local image:
 
@@ -362,7 +367,11 @@ The Dockerfile defaults `TARGETARCH` to `amd64` for legacy builders. No `--progr
 sh tests/android-runtime.sh opencode-local:latest
 ```
 
-The runtime test uses host networking, a read-only root filesystem, user `node`, dropped capabilities, and the writable `.sdk` state exception. It checks Java, Android CLI startup twice, SDK target listing, ADB and build-tool versions, API 36 files, build-tools 37.0.0, and `android --sdk="$ANDROID_HOME" sdk list`. Each run uses a fresh anonymous `/home/node` volume. Docker removes the volume with `--rm`. The first CLI launch downloads its payload and needs network access. The test does not install SDK packages, start OpenChamber, or check ADB server connectivity.
+The runtime test creates a unique disposable named SDK volume and runs two disposable containers with that shared volume. Docker seeds the volume from the image. Both containers use host networking, a read-only root filesystem, user `node`, dropped capabilities, and `no-new-privileges`. The test checks the Android environment paths, SDK and home writes, rejected writes to other `/opt` tool directories, Java, Android CLI startup twice, SDK target listing, ADB and build-tool versions, API 36 files, build-tools 37.0.0, and `android --sdk="$ANDROID_HOME" sdk list`.
+
+The first container checks exact repository availability and installs the missing `build-tools;36.0.0` and `platforms;android-37.0` packages with SDK `sdkmanager`. It fails clearly if either exact package is unavailable; it does not substitute another package. The image already contains accepted SDK licenses. The second container checks both installed package artifacts and a marker retained from the first container. It also checks a new SDK write after recreation. Each container uses a fresh anonymous `/home/node` volume, which Docker removes with `--rm`. The script removes the disposable SDK volume on exit.
+
+The test requires Docker, a built image, network access for CLI and SDK downloads, and sufficient Docker storage. It does not start or recreate the Compose service, start OpenChamber, check ADB server connectivity, or verify the optional host ADB bind policy. It does not validate Gradle builds or emulator use. No Docker runtime check for this SDK-volume change ran in the implementation environment because Docker was unavailable.
 
 Open a shell without the normal entry point:
 
