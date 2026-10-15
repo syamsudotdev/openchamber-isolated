@@ -223,7 +223,7 @@ Known snapshot limitations remain. Bundled `AGENTS.md` requires an `rtk` skill, 
 
 ### Bundled Command-Line Tools
 
-The image pins OpenChamber 2.3.2 and OpenCode 2.0.28. The build requires Node >=24.14.0 before npm installation. The image installs `uv` and `uvx` 0.12.19, RTK OSS 1.0.0, and `fff-mcp` 0.11.0 in `/usr/local/bin`. `install-tools.sh` supports release assets for Docker `TARGETARCH=amd64` or `arm64`, but the complete image accepts only `amd64` because of the Android SDK. The installer verifies fixed SHA256 checksums before extraction or installation. To update a tool, update its release URL and both architecture checksums together.
+The image pins OpenChamber 2.3.3 and OpenCode 2.0.29. The build requires Node >=24.14.0 before npm installation. The image installs `uv` and `uvx` 0.12.19, RTK OSS 1.0.0, and `fff-mcp` 0.11.0 in `/usr/local/bin`. `install-tools.sh` supports release assets for Docker `TARGETARCH=amd64` or `arm64`, but the complete image accepts only `amd64` because of the Android SDK. The installer verifies fixed SHA256 checksums before extraction or installation. To update a tool, update its release URL and both architecture checksums together.
 
 The release URLs and checksums came from the respective GitHub release APIs. `uv` 0.12.19 matches the verified host version. RTK uses the `rtk-oss` release assets under the Apache License 2.0, not the commercial edition. The image retains the archive's `LICENSE` at `/usr/local/share/licenses/rtk/LICENSE` with mode `0644`. The build checks that `rtk hook opencode --help` succeeds. This help check does not install a hook or modify user configuration. `fff-mcp` 0.11.0 is a new pinned baseline, not a verified match to the host binary.
 
@@ -289,8 +289,8 @@ The root filesystem remains read-only. Docker named volumes make `/home/node` an
 Change these build arguments in `Dockerfile`:
 
 ```dockerfile
-ARG OPENCODE_VERSION=2.0.28
-ARG OPENCHAMBER_VERSION=2.3.2
+ARG OPENCODE_VERSION=2.0.29
+ARG OPENCHAMBER_VERSION=2.3.3
 ```
 
 Then rebuild the image:
