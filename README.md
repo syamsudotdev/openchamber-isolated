@@ -286,6 +286,18 @@ The root filesystem remains read-only. Docker named volumes make `/home/node` an
 
 ## Update Versions
 
+The `Update application versions` workflow checks npm `latest` for exact stable `@opencode/cli` and `@openchamber/web` versions. It rejects downgrades, invalid metadata, and inconsistent pins before it changes files. It updates only the Dockerfile pins and their README references. It does not update other tools.
+
+The schedule runs daily at 20:00 in `America/Los_Angeles`. The script uses the local calendar date and runs updates every second day, with 2026-10-21 as an active date. This calendar calculation preserves parity across month, year, and daylight-saving changes. A manual `workflow_dispatch` run bypasses the date gate. Manual runs must select `main`; other branches cannot run the update job. Checkout always selects `main`.
+
+GitHub runs scheduled workflows only from the default branch. Keep `main` as the default branch. Scheduled runs can be delayed or dropped under load. A delayed run uses its actual local execution date; a missed date is not replayed. GitHub can disable scheduled workflows in public repositories after 60 days without repository activity. Check the Actions page if updates stop. Concurrency prevents overlapping runs; GitHub can replace an older pending run with the latest pending run.
+
+When versions change, the workflow runs all five test commands, builds a `linux/amd64` image, and checks the installed package versions in a disposable container without starting services. It commits only `Dockerfile` and `README.md`, then pushes to `main` with `GITHUB_TOKEN`. Repository rules must permit this push. A no-op creates no commit. Validation, test, build, or branch-movement failures prevent the push. A concurrent change after the final fetch causes a normal non-fast-forward push rejection; the workflow never forces a push.
+
+The commit message records only changed packages, their old and new versions, and official release links. Missing releases or minimal release notes produce a comparison link marked `Release notes unavailable`. The script treats notes with fewer than 80 non-whitespace characters, or placeholder notes, as minimal. It does not summarize breaking changes. GitHub API errors other than a missing release stop the update. The message file stays in runner temporary storage, not in Git.
+
+For a manual pin change, keep both README references consistent with each Dockerfile argument:
+
 Change these build arguments in `Dockerfile`:
 
 ```dockerfile
@@ -342,6 +354,7 @@ sh tests/bootstrap.sh
 sh tests/install-tools.sh
 sh tests/android-install.sh
 node --test tests/rtk-plugin.mjs
+node --test tests/update-versions.mjs
 ```
 
 The tests use temporary configuration, data, and cache directories. They use a stub `openchamber` command and fixed example contents. They do not validate Docker builds or the running applications.
