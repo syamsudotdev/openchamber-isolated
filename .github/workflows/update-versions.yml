@@ -1,0 +1,71 @@
+name: Update application versions
+
+on:
+  schedule:
+    - cron: '0 20 * * *'
+      timezone: America/Los_Angeles
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-versions-main
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: main
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24.14.0'
+      - name: Update validated pins
+        id: versions
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/update-versions.mjs
+      - name: Test
+        if: steps.versions.outputs.changed == 'true'
+        run: |
+          sh tests/bootstrap.sh
+          sh tests/install-tools.sh
+          sh tests/android-install.sh
+          node --test tests/rtk-plugin.mjs
+          node --test tests/update-versions.mjs
+      - name: Build and check installed packages
+        if: steps.versions.outputs.changed == 'true'
+        run: |
+          docker build --platform linux/amd64 -t openchamber-update-check .
+          docker run --rm --platform linux/amd64 --entrypoint npm openchamber-update-check list -g --depth=0 --json > "$RUNNER_TEMP/installed-packages.json"
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const docker = readFileSync('Dockerfile', 'utf8');
+          const installed = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/installed-packages.json`, 'utf8'));
+          for (const [name, arg] of [['@opencode/cli', 'OPENCODE_VERSION'], ['@openchamber/web', 'OPENCHAMBER_VERSION']]) {
+            const expected = docker.match(new RegExp(`^ARG ${arg}=(.+)$`, 'm'))[1];
+            if (installed.dependencies?.[name]?.version !== expected) throw new Error(`Installed pin mismatch: ${name}`);
+          }
+          NODE
+      - name: Commit and push only validated changes
+        if: steps.versions.outputs.changed == 'true'
+        env:
+          MESSAGE_PATH: ${{ steps.versions.outputs.message_path }}
+        run: |
+          set -eu
+          test "$(git branch --show-current)" = main
+          test -z "$(git ls-files --others --exclude-standard)"
+          test -z "$(git diff --cached --name-only)"
+          test "$(git diff --name-only | LC_ALL=C sort)" = "$(printf 'Dockerfile\nREADME.md')"
+          git diff --check
+          git fetch origin main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- Dockerfile README.md
+          git commit -F "$MESSAGE_PATH"
+          git push origin HEAD:main
