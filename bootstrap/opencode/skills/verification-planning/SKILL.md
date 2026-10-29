@@ -39,12 +39,34 @@ and a weaker or stronger alternative is available if circumstances change.
 
 ## Set a verification budget
 
-At the final state, state the distinct claims, assign one owner to establish or
-refute each, and choose the minimum non-duplicative evidence that covers the
-claims and important boundaries. Reuse evidence only while its relevant code,
-inputs, environment, and state remain valid. Required repository and release
-checks still apply; broaden or repeat verification only when a stated condition
-justifies it.
+Before execution, record: claims → owner → narrow evidence and boundaries →
+expected command count and measured time (or `Unknown`) → repeat conditions.
+Identify real production components separately from fakes and fixtures. For each
+test, use an independent expected result and name a plausible fault it must detect.
+
+For each new or changed test, record a relevant failed assertion against the
+natural defect or a representative temporary fault, then a pass after restoration.
+Batch compatible faults and use one shared restored passing run when possible.
+Every claimed test's relevant assertion must execute, fail, and then pass.
+A fault that masks another fault invalidates that batch's evidence for the masked
+case. Compiler and test-harness errors do not establish defect detection.
+
+Before temporary mutations, preserve the exact source state and arrange guarded
+restoration, including interruption cleanup. Verify restoration before final checks.
+Serialize mutations against other source readers and runners. Parallel review
+must not inspect partially mutated source. Exhaustive mutation campaigns require
+an explicit budget; they are not the default.
+
+Run targeted child tests only when needed. After reconciliation, the parent owns
+one final gate. Required repository and release checks still apply. Reuse results
+only while relevant code, inputs, environment, and state remain valid. Rerun
+invalidated checks; do not force an unconditional full-suite rerun.
+
+Record actual commands, raw outcomes, failures, and limits. Put source evidence
+at a path accessible to its intended consumer. During long batches, report
+completed commands, active commands, and remaining work from measured status,
+not guessed progress. After interruption, inspect the existing command's status
+and result before launching a duplicate.
 
 ## 3. Create a verification affordance when needed
 
@@ -109,3 +131,12 @@ what remains outside its reach.
 Use this skill proportionately. Small mechanical changes can follow ordinary
 project checks directly. For larger multi-phase work, let this skill establish
 the evidence path that later work follows.
+
+## Instruction self-test
+
+- Two compatible faults reach both tests' relevant assertions: record both failures,
+  restore exact source, then record both passes in one shared run.
+- One fault prevents another assertion from running: reject the masked case's evidence.
+- A temporary fault causes a compiler error: repair the experiment; this is not proof.
+- Code, inputs, environment, and state remain unchanged: reuse the valid result.
+- A baseline or input changes: rerun affected checks, not automatically the full suite.

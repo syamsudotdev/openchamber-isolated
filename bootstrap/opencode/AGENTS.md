@@ -94,6 +94,8 @@ Use evidence before you make an implementation decision.
 
 Prefer direct evidence.
 
+Check supplied captures, source files, and current decisions before you ask for clarification.
+
 Do not use a name, label, convention, or common pattern as evidence when you can inspect the implementation.
 
 Do not infer dimensions from a component name when you can measure them.
@@ -169,6 +171,12 @@ Do not include a rejected hypothesis in the implementation plan.
 
 A change modifies files, Git data, installed software, external services, or published content.
 
+Perform read-only inspection without approval, including file reads, searches, `git status`, `git diff`, and subagents that cannot make changes.
+
+Before approval, do not modify files, Git data, installed software, or external services.
+
+Do not publish content, run builds or tests, or launch write-capable subagents before approval.
+
 Inspect the necessary context before a change.
 
 Use read-only inspection to define the scope.
@@ -187,7 +195,15 @@ Wait for explicit user approval.
 
 Apply the approval only to the presented scope.
 
+Execute and verify the approved plan.
+
 Do not request another approval for work inside the approved scope.
+
+Follow-up requests retain the current read-only or implementation scope unless the user explicitly changes it.
+
+Refining or reviewing test cases does not authorize writing tests.
+
+Apply the latest scope narrowing or revocation.
 
 Stop when implementation requires a material scope change.
 
@@ -231,7 +247,11 @@ Confirm that each remaining changed line is necessary.
 
 ## 6. Verification and Execution
 
+Load `verification-planning` before non-trivial changes or test-evidence planning.
+
 Perform final verification after implementation.
+
+Reuse evidence that remains valid for the current source, scope, and environment.
 
 Run the project formatter when the project provides one.
 
@@ -255,21 +275,9 @@ Name one plausible incorrect behavior that each test must expose.
 
 Reject a test as evidence if it passes while that incorrect behavior is present.
 
-For each new or changed automated test, record a failure against the known defect or the smallest representative temporary fault.
+For each new or changed automated test, record a meaningful failed assertion against the known defect or a representative temporary fault, then a pass after restoration.
 
-Restore the code after the failure.
-
-Record a pass after restoration.
-
-Before a manual test, record the initial state.
-
-Record the exact actions.
-
-Record the expected observable result.
-
-Record the failure condition.
-
-After the manual test, record the actual observable evidence.
+Record each manual test's initial state, exact actions, expected observable result, and failure condition before execution, then its actual observations after execution.
 
 Reject an operator conclusion without observable evidence.
 
@@ -281,48 +289,15 @@ Restore all temporary faults before final verification.
 
 ### Android Verification
 
-Compile an Android project before you report completion.
+Compile the applicable Android variant before you report completion and after conflict resolution.
 
-Run `./gradlew :<module>:compileDebugKotlin` when you know the module.
-
-Run `./gradlew compileDebugKotlin` when you do not know the module.
-
-Compile the project after conflict resolution.
-
-Ask the global Reviewer to flag fully qualified names in Kotlin and Java files when imports can replace them.
+Derive the compile command from project guidance and build configuration.
 
 Synchronize uncommitted changed files before you request diagnostics for a worktree.
 
-## 7. Role
+Confirm that diagnostic evidence comes from the intended worktree and source state.
 
-Perform read-only inspection without approval.
-
-Read-only inspection includes file reads.
-
-Read-only inspection includes searches.
-
-Read-only inspection includes `git status`.
-
-Read-only inspection includes output from `git diff`.
-
-Read-only inspection includes a subagent that cannot make changes.
-
-Before approval:
-
-* Do not modify files.
-* Do not modify Git data.
-* Do not modify installed software.
-* Do not modify external services.
-* Do not publish content.
-* Do not launch a subagent that can make changes.
-* Do not run builds.
-* Do not run tests.
-
-After approval:
-
-* Execute the approved plan.
-* Verify the approved plan.
-* Do not request another approval for work inside the approved plan.
+## 7. Insights
 
 Add `★ Insight` only when it changes the implementation choice, risk assessment, or verification plan.
 
@@ -332,37 +307,47 @@ Make each `★ Insight` specific to the codebase.
 
 ## 8. Role Boundary
 
-The orchestrator owns delegation.
-
-The orchestrator owns the subagent lifecycle.
-
-The orchestrator owns delegated task status.
-
-The orchestrator owns escalation.
-
-The orchestrator owns reconciliation.
-
-The orchestrator owns acceptance policy.
-
-Follow `roles/orchestrator.md` for delegation rules.
-
-Follow `roles/orchestrator.md` for retry rules.
-
-Follow `roles/orchestrator.md` for escalation rules.
-
-Follow `roles/orchestrator.md` for reconciliation rules.
-
-Follow `roles/orchestrator.md` for review rules.
-
-Follow `roles/orchestrator.md` for acceptance rules.
+Follow `roles/orchestrator.md` for orchestration ownership, delegation, lifecycle, status, retries, escalation, reconciliation, review, and acceptance.
 
 Do not let `roles/orchestrator.md` override the model policy in this file.
 
+At delegation, verify that the child can access required artifacts.
+
+Record unavailable artifacts and the resulting evidence limits instead of inferring their contents.
+
+Treat progress reports as progress, not completed handoffs.
+
+Report active commands and who owns them at handoff.
+
+Consume an existing result before you launch duplicate work.
+
+Continue independent approved work while dependencies run.
+
 ## 9. Tools and Command-Line Interface
 
-Read the `rtk` skill before you run an `rtk` command.
+RTK means Rust Token Killer.
 
-Read the `rtk` skill before you troubleshoot an `rtk` command.
+OpenCode can rewrite Bash tool calls through the global RTK integration.
+
+A direct RTK command has `rtk` as its first token.
+
+Read the `rtk` skill before you run or troubleshoot a direct RTK command.
+
+Do not add `rtk` to a command that does not call RTK directly.
+
+Use `rtk tree` for directory-tree inspection.
+
+FFF is a code-search service.
+
+Use `fff.find_files` for file-name discovery in a Git-indexed repository.
+
+Use FFF grep to search for one identifier in a Git-indexed repository.
+
+Use FFF multi_grep to search for multiple identifiers or name variants.
+
+Use a regular expression only when alternation is necessary.
+
+Do not use shell `find` or shell `grep` for code discovery in a Git-indexed repository.
 
 Run Python only through `uv run`.
 
@@ -372,8 +357,6 @@ Do not use bare `python`.
 
 Do not use bare `pip`.
 
-Use `rtk tree` for directory-tree inspection.
-
 Do not read, decode, inspect, upload, or process image binary data unless the user explicitly requests image inspection or image processing.
 
 Treat each image file as an opaque file until the user gives that request.
@@ -381,8 +364,6 @@ Treat each image file as an opaque file until the user gives that request.
 ## 10. Git and Pull Request Workflow
 
 Track persistent project documents in Git.
-
-Persistent project documents include `cobroke-tickets-priority.md` and `followups.md`.
 
 Do not add persistent project documents to `.gitignore`.
 
@@ -408,8 +389,6 @@ Do not stash changes before approval.
 
 Stop after the same failure occurs three times.
 
-Report the repeated failure.
-
 Stop after a dependency operation fails twice.
 
 Present options after the second dependency failure.
@@ -418,47 +397,19 @@ Make no more than five attempts to correct lint errors.
 
 Stop when the cause of a failure remains unknown after two attempts.
 
-Report the unknown cause.
-
 After ten correction edits without a passing applicable test, stop.
 
-Report the failed correction cycle.
+Apply the earliest applicable stop condition, even if a role permits more attempts.
+
+Count unsuccessful attempts, not expected temporary-fault test failures.
+
+When you stop, report the blocker and relevant evidence.
 
 Do not force-install dependencies.
 
 Pin dependencies to exact versions.
 
-## 12. Rust Token Killer
-
-RTK means Rust Token Killer.
-
-OpenCode can rewrite Bash tool calls through the global RTK integration.
-
-Do not add `rtk` to a command that does not call RTK directly.
-
-A direct RTK command has `rtk` as its first token.
-
-## 13. FFF Code Search
-
-FFF is a code-search service.
-
-Use `fff.find_files` for file-name discovery in a Git-indexed repository.
-
-Use FFF grep to search for one identifier in a Git-indexed repository.
-
-Use FFF multi_grep to search for multiple identifiers or name variants.
-
-Use a regular expression only when alternation is necessary.
-
-Do not use shell `find` for code discovery in a Git-indexed repository.
-
-Do not use shell `grep` for code discovery in a Git-indexed repository.
-
-Use `rtk tree` for directory-tree inspection.
-
-Use FFF for code discovery.
-
-## 14. Session and Model Economy
+## 12. Session and Model Economy
 
 Configured model settings are authoritative for every agent.
 

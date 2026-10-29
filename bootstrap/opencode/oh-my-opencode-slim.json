@@ -1,11 +1,79 @@
 {
   "$schema": "https://unpkg.com/oh-my-opencode-slim@latest/oh-my-opencode-slim.schema.json",
-  "preset": "openai",
+  "preset": "claude",
   "presets": {
+    "claude": {
+      "orchestrator": {
+        "model": "claude-code/claude-opus-5-5[1m]",
+        "variant": "high",
+        "skills": [
+          "*"
+        ],
+        "mcps": [
+          "*",
+          "!context7"
+        ]
+      },
+      "oracle": {
+        "model": "claude-code/claude-opus-5-5[1m]",
+        "variant": "xhigh",
+        "skills": [
+          "simplify",
+          "data-layer-footguns",
+          "desktop-and-build-footguns",
+          "engineering-method-footguns",
+          "kmp-architecture-footguns",
+          "media-playback-footguns",
+          "remote-api-footguns",
+          "state-and-background-footguns"
+        ],
+        "mcps": []
+      },
+      "librarian": {
+        "model": "claude-code/claude-sonnet-5-5",
+        "variant": "medium",
+        "skills": [],
+        "mcps": [
+          "context7",
+          "gh_grep"
+        ]
+      },
+      "explorer": {
+        "model": "claude-code/claude-haiku-5-5",
+        "variant": "low",
+        "skills": [],
+        "mcps": []
+      },
+      "designer": {
+        "model": "claude-code/claude-opus-5-5[1m]",
+        "variant": "low",
+        "skills": [
+          "compose-screens-footguns",
+          "compose-visuals-footguns"
+        ],
+        "mcps": []
+      },
+      "fixer": {
+        "model": "claude-code/claude-sonnet-5-5",
+        "variant": "high",
+        "skills": [
+          "compose-screens-footguns",
+          "compose-visuals-footguns",
+          "data-layer-footguns",
+          "desktop-and-build-footguns",
+          "engineering-method-footguns",
+          "kmp-architecture-footguns",
+          "media-playback-footguns",
+          "remote-api-footguns",
+          "state-and-background-footguns"
+        ],
+        "mcps": []
+      }
+    },
     "openai": {
       "orchestrator": {
         "model": "openai/gpt-6.1-sol",
-        "variant": "medium",
+        "variant": "high",
         "skills": [
           "*"
         ],
@@ -16,7 +84,7 @@
       },
       "oracle": {
         "model": "openai/gpt-6.1-sol",
-        "variant": "high",
+        "variant": "max",
         "skills": [
           "simplify",
           "data-layer-footguns",

@@ -8,7 +8,7 @@
     }
   ],
   "plugin": [
-    "oh-my-opencode-slim@2.2.25"
+    "oh-my-opencode-slim"
   ],
   "agents": {
     "build": {
@@ -32,11 +32,33 @@
         "command": [
           "/usr/local/bin/fff-mcp"
         ]
+      },
+      "atlassian": {
+        "type": "remote",
+        "url": "https://mcp.atlassian.com/v2/mcp"
+      },
+      "figma": {
+        "type": "local",
+        "command": [
+          "npx",
+          "-y",
+          "figma-developer-mcp@0.13.2",
+          "--stdio"
+        ],
+        "environment": {
+          "FIGMA_API_KEY": "{env:FIGMA_API_KEY}"
+        }
       }
     }
   },
   "warming": true,
+  "experimental": {
+    "background_compaction": true
+  },
   "websearch": {
     "provider": "random"
-  }
+  },
+  "plugins": [
+    "@openchamber/opencode-claude@1.6.0"
+  ]
 }

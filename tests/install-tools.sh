@@ -40,7 +40,7 @@ SH
 cat > "$temporary/bin/tar" <<'SH'
 #!/bin/sh
 set -eu
-[ "$(grep -c '^sha ' "$EVENTS")" = 3 ]
+[ "$(grep -c '^sha ' "$EVENTS")" = 4 ]
 [ "$1" = -xzf ] && [ "$3" = -C ]
 directory=$4
 shift 4
@@ -48,12 +48,15 @@ for member do
   # These members are fixed test fixtures, independent of installer variables.
   case "$TARGETARCH:$member" in
     amd64:uv-x86_64-unknown-linux-gnu/uv|amd64:uv-x86_64-unknown-linux-gnu/uvx|amd64:rtk|amd64:LICENSE) ;;
+    amd64:gh_2.103.3_linux_amd64/bin/gh|amd64:gh_2.103.3_linux_amd64/LICENSE) ;;
     arm64:uv-aarch64-unknown-linux-gnu/uv|arm64:uv-aarch64-unknown-linux-gnu/uvx|arm64:rtk|arm64:LICENSE) ;;
+    arm64:gh_2.103.3_linux_arm64/bin/gh|arm64:gh_2.103.3_linux_arm64/LICENSE) ;;
     *) printf 'Unexpected archive member for %s: %s\n' "$TARGETARCH" "$member" >&2; exit 1 ;;
   esac
   mkdir -p "$directory/$(dirname "$member")"
   case "$member" in
     LICENSE) printf '%s\n' 'Apache License' 'Version 2.0, January 2004' > "$directory/$member" ;;
+    */LICENSE) printf '%s\n' 'MIT License' > "$directory/$member" ;;
     *) printf 'stub executable: %s\n' "${member##*/}" > "$directory/$member" ;;
   esac
   printf 'extract %s\n' "$member" >> "$EVENTS"
@@ -65,10 +68,10 @@ cat > "$temporary/bin/install" <<'SH'
 #!/bin/sh
 set -eu
 [ "$1" = -m ]
-[ "$(grep -c '^sha ' "$EVENTS")" = 3 ]
-[ "$(grep -c '^tar$' "$EVENTS")" = 2 ]
+[ "$(grep -c '^sha ' "$EVENTS")" = 4 ]
+[ "$(grep -c '^tar$' "$EVENTS")" = 3 ]
 case "$4" in
-  "$LICENSE_DESTINATION/LICENSE") [ "$2" = 0644 ] ;;
+  "$LICENSE_ROOT/rtk/LICENSE"|"$LICENSE_ROOT/gh/LICENSE") [ "$2" = 0644 ] ;;
   "$DESTINATION"/*) [ "$2" = 0755 ] ;;
   *) exit 1 ;;
 esac
@@ -83,7 +86,7 @@ export EXPECTED_URLS="$temporary/urls"
 export EXPECTED_HASHES="$temporary/hashes"
 export TMPDIR="$temporary/scratch"
 export DESTINATION="$temporary/prefix/bin"
-export LICENSE_DESTINATION="$temporary/prefix/share/licenses/rtk"
+export LICENSE_ROOT="$temporary/prefix/share/licenses"
 
 # Fixed release examples come from the approved release evidence, not the installer.
 examples() {
@@ -93,11 +96,13 @@ examples() {
 uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.12.19/uv-x86_64-unknown-linux-gnu.tar.gz
 rtk.tar.gz https://github.com/rtk-ai/rtk/releases/download/v1.0.0/rtk-oss-x86_64-unknown-linux-musl.tar.gz
 fff-mcp https://github.com/dmtrKovalenko/fff/releases/download/v0.11.0/fff-mcp-x86_64-unknown-linux-musl
+gh.tar.gz https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz
 EOF
       cat > "$EXPECTED_HASHES" <<'EOF'
 uv.tar.gz 23bf5552d220e0842b65c862097b2ebaeba0064b74eda5e565e77fd25969d8c8
 rtk.tar.gz 9a0f4f8240a0701d9c409dcd9afc1f6f1e8625d55299d84af17fcd26d0b70600
 fff-mcp d1e8671f40c89c445aaa1728a21ec04b74be2e5f99091485caeabcc97f99aceb
+gh.tar.gz 4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d
 EOF
       ;;
     arm64)
@@ -105,11 +110,13 @@ EOF
 uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.12.19/uv-aarch64-unknown-linux-gnu.tar.gz
 rtk.tar.gz https://github.com/rtk-ai/rtk/releases/download/v1.0.0/rtk-oss-aarch64-unknown-linux-gnu.tar.gz
 fff-mcp https://github.com/dmtrKovalenko/fff/releases/download/v0.11.0/fff-mcp-aarch64-unknown-linux-musl
+gh.tar.gz https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_arm64.tar.gz
 EOF
       cat > "$EXPECTED_HASHES" <<'EOF'
 uv.tar.gz 0804e9b164c64b6914182d5920c08551958a095986f10a3731056df701126436
 rtk.tar.gz 318d1b3b8438a260762f2a5b050bd5a61ebaa7bec13f37c475ca1d6372a3b61d
 fff-mcp 35f8e05d6c865266bf451d13bfa5e1b0d98438fda7dc1c9bdbc1c6a83484577d
+gh.tar.gz ee32df2323c8847f5fac6cb6b4b69ca75828e9329a8f22f677021f7b3306ce63
 EOF
       ;;
   esac
@@ -131,22 +138,25 @@ for TARGETARCH in amd64 arm64; do
   examples "$TARGETARCH"
   reset_case
   sh "$installer" "$DESTINATION"
-  for name in uv uvx rtk fff-mcp; do
+  for name in uv uvx rtk fff-mcp gh; do
     [ -x "$DESTINATION/$name" ] || fail "missing executable: $name"
   done
-  for name in uv uvx rtk; do
+  for name in uv uvx rtk gh; do
     [ "$(cat "$DESTINATION/$name")" = "stub executable: $name" ] || fail "wrong installed contents: $name"
   done
   [ "$(cat "$DESTINATION/fff-mcp")" = 'stub download: fff-mcp' ] || fail 'wrong installed contents: fff-mcp'
-  [ -f "$LICENSE_DESTINATION/LICENSE" ] || fail 'missing RTK license'
-  [ "$(cat "$LICENSE_DESTINATION/LICENSE")" = "$(printf '%s\n' 'Apache License' 'Version 2.0, January 2004')" ] || fail 'wrong RTK license contents'
-  [ "$(stat -c '%a' "$LICENSE_DESTINATION/LICENSE")" = 644 ] || fail 'wrong RTK license permissions'
+  [ -f "$LICENSE_ROOT/rtk/LICENSE" ] || fail 'missing RTK license'
+  [ "$(cat "$LICENSE_ROOT/rtk/LICENSE")" = "$(printf '%s\n' 'Apache License' 'Version 2.0, January 2004')" ] || fail 'wrong RTK license contents'
+  [ "$(stat -c '%a' "$LICENSE_ROOT/rtk/LICENSE")" = 644 ] || fail 'wrong RTK license permissions'
+  [ "$(cat "$LICENSE_ROOT/gh/LICENSE")" = 'MIT License' ] || fail 'wrong gh license contents'
+  [ "$(stat -c '%a' "$LICENSE_ROOT/gh/LICENSE")" = 644 ] || fail 'wrong gh license permissions'
   [ "$(grep -c '^extract LICENSE$' "$EVENTS")" = 1 ] || fail 'wrong license extraction count'
-  [ "$(grep -c '^curl ' "$EVENTS")" = 3 ] || fail 'wrong download count'
-  [ "$(grep -c '^install ' "$EVENTS")" = 5 ] || fail 'wrong install count'
+  [ "$(grep -c "^extract gh_2.103.3_linux_$TARGETARCH/LICENSE\$" "$EVENTS")" = 1 ] || fail 'wrong gh license extraction count'
+  [ "$(grep -c '^curl ' "$EVENTS")" = 4 ] || fail 'wrong download count'
+  [ "$(grep -c '^install ' "$EVENTS")" = 7 ] || fail 'wrong install count'
   check_cleanup
 
-  for asset in uv.tar.gz rtk.tar.gz fff-mcp; do
+  for asset in uv.tar.gz rtk.tar.gz fff-mcp gh.tar.gz; do
     reset_case
     export FAIL_CHECKSUM="$asset"
     if sh "$installer" "$DESTINATION"; then fail "checksum rejection ignored: $asset"; fi

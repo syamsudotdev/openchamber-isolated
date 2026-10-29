@@ -2,6 +2,7 @@ FROM node:24-bookworm-slim
 
 ARG OPENCODE_VERSION=2.2.1
 ARG OPENCHAMBER_VERSION=2.5.3
+ARG PLAYWRIGHT_VERSION=1.64.1
 ARG TARGETARCH=amd64
 
 RUN test "${TARGETARCH}" = amd64 \
@@ -27,7 +28,12 @@ RUN node -e 'const [major, minor] = process.versions.node.split(".").map(Number)
   && npm install -g \
     "@opencode/cli@${OPENCODE_VERSION}" \
     "@openchamber/web@${OPENCHAMBER_VERSION}" \
+    "playwright@${PLAYWRIGHT_VERSION}" \
   && npm cache clean --force
+
+# Install only the Chromium system libraries. Projects download their own browser builds.
+RUN playwright install-deps chromium \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY install-tools.sh /opt/bootstrap/install-tools.sh
 RUN TARGETARCH="${TARGETARCH}" sh /opt/bootstrap/install-tools.sh \
