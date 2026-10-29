@@ -40,22 +40,24 @@ SH
 cat > "$temporary/bin/tar" <<'SH'
 #!/bin/sh
 set -eu
-[ "$(grep -c '^sha ' "$EVENTS")" = 4 ]
+[ "$(grep -c '^sha ' "$EVENTS")" = 5 ]
 [ "$1" = -xzf ] && [ "$3" = -C ]
+archive=${2##*/}
 directory=$4
 shift 4
 for member do
   # These members are fixed test fixtures, independent of installer variables.
   case "$TARGETARCH:$member" in
     amd64:uv-x86_64-unknown-linux-gnu/uv|amd64:uv-x86_64-unknown-linux-gnu/uvx|amd64:rtk|amd64:LICENSE) ;;
-    amd64:gh_2.103.3_linux_amd64/bin/gh|amd64:gh_2.103.3_linux_amd64/LICENSE) ;;
+    amd64:gh_2.103.3_linux_amd64/bin/gh|amd64:gh_2.103.3_linux_amd64/LICENSE|amd64:gitleaks) ;;
     arm64:uv-aarch64-unknown-linux-gnu/uv|arm64:uv-aarch64-unknown-linux-gnu/uvx|arm64:rtk|arm64:LICENSE) ;;
-    arm64:gh_2.103.3_linux_arm64/bin/gh|arm64:gh_2.103.3_linux_arm64/LICENSE) ;;
+    arm64:gh_2.103.3_linux_arm64/bin/gh|arm64:gh_2.103.3_linux_arm64/LICENSE|arm64:gitleaks) ;;
     *) printf 'Unexpected archive member for %s: %s\n' "$TARGETARCH" "$member" >&2; exit 1 ;;
   esac
   mkdir -p "$directory/$(dirname "$member")"
-  case "$member" in
-    LICENSE) printf '%s\n' 'Apache License' 'Version 2.0, January 2004' > "$directory/$member" ;;
+  case "$archive:$member" in
+    gitleaks.tar.gz:LICENSE) printf '%s\n' 'MIT License' 'gitleaks' > "$directory/$member" ;;
+    *:LICENSE) printf '%s\n' 'Apache License' 'Version 2.0, January 2004' > "$directory/$member" ;;
     */LICENSE) printf '%s\n' 'MIT License' > "$directory/$member" ;;
     *) printf 'stub executable: %s\n' "${member##*/}" > "$directory/$member" ;;
   esac
@@ -68,10 +70,10 @@ cat > "$temporary/bin/install" <<'SH'
 #!/bin/sh
 set -eu
 [ "$1" = -m ]
-[ "$(grep -c '^sha ' "$EVENTS")" = 4 ]
-[ "$(grep -c '^tar$' "$EVENTS")" = 3 ]
+[ "$(grep -c '^sha ' "$EVENTS")" = 5 ]
+[ "$(grep -c '^tar$' "$EVENTS")" = 4 ]
 case "$4" in
-  "$LICENSE_ROOT/rtk/LICENSE"|"$LICENSE_ROOT/gh/LICENSE") [ "$2" = 0644 ] ;;
+  "$LICENSE_ROOT/rtk/LICENSE"|"$LICENSE_ROOT/gh/LICENSE"|"$LICENSE_ROOT/gitleaks/LICENSE") [ "$2" = 0644 ] ;;
   "$DESTINATION"/*) [ "$2" = 0755 ] ;;
   *) exit 1 ;;
 esac
@@ -97,12 +99,14 @@ uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.12.19/uv-x86_64-un
 rtk.tar.gz https://github.com/rtk-ai/rtk/releases/download/v1.0.0/rtk-oss-x86_64-unknown-linux-musl.tar.gz
 fff-mcp https://github.com/dmtrKovalenko/fff/releases/download/v0.11.0/fff-mcp-x86_64-unknown-linux-musl
 gh.tar.gz https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz
+gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
 EOF
       cat > "$EXPECTED_HASHES" <<'EOF'
 uv.tar.gz 23bf5552d220e0842b65c862097b2ebaeba0064b74eda5e565e77fd25969d8c8
 rtk.tar.gz 9a0f4f8240a0701d9c409dcd9afc1f6f1e8625d55299d84af17fcd26d0b70600
 fff-mcp d1e8671f40c89c445aaa1728a21ec04b74be2e5f99091485caeabcc97f99aceb
 gh.tar.gz 4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d
+gitleaks.tar.gz 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
 EOF
       ;;
     arm64)
@@ -111,12 +115,14 @@ uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.12.19/uv-aarch64-u
 rtk.tar.gz https://github.com/rtk-ai/rtk/releases/download/v1.0.0/rtk-oss-aarch64-unknown-linux-gnu.tar.gz
 fff-mcp https://github.com/dmtrKovalenko/fff/releases/download/v0.11.0/fff-mcp-aarch64-unknown-linux-musl
 gh.tar.gz https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_arm64.tar.gz
+gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_arm64.tar.gz
 EOF
       cat > "$EXPECTED_HASHES" <<'EOF'
 uv.tar.gz 0804e9b164c64b6914182d5920c08551958a095986f10a3731056df701126436
 rtk.tar.gz 318d1b3b8438a260762f2a5b050bd5a61ebaa7bec13f37c475ca1d6372a3b61d
 fff-mcp 35f8e05d6c865266bf451d13bfa5e1b0d98438fda7dc1c9bdbc1c6a83484577d
 gh.tar.gz ee32df2323c8847f5fac6cb6b4b69ca75828e9329a8f22f677021f7b3306ce63
+gitleaks.tar.gz e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080
 EOF
       ;;
   esac
@@ -138,10 +144,10 @@ for TARGETARCH in amd64 arm64; do
   examples "$TARGETARCH"
   reset_case
   sh "$installer" "$DESTINATION"
-  for name in uv uvx rtk fff-mcp gh; do
+  for name in uv uvx rtk fff-mcp gh gitleaks; do
     [ -x "$DESTINATION/$name" ] || fail "missing executable: $name"
   done
-  for name in uv uvx rtk gh; do
+  for name in uv uvx rtk gh gitleaks; do
     [ "$(cat "$DESTINATION/$name")" = "stub executable: $name" ] || fail "wrong installed contents: $name"
   done
   [ "$(cat "$DESTINATION/fff-mcp")" = 'stub download: fff-mcp' ] || fail 'wrong installed contents: fff-mcp'
@@ -150,13 +156,15 @@ for TARGETARCH in amd64 arm64; do
   [ "$(stat -c '%a' "$LICENSE_ROOT/rtk/LICENSE")" = 644 ] || fail 'wrong RTK license permissions'
   [ "$(cat "$LICENSE_ROOT/gh/LICENSE")" = 'MIT License' ] || fail 'wrong gh license contents'
   [ "$(stat -c '%a' "$LICENSE_ROOT/gh/LICENSE")" = 644 ] || fail 'wrong gh license permissions'
-  [ "$(grep -c '^extract LICENSE$' "$EVENTS")" = 1 ] || fail 'wrong license extraction count'
+  [ "$(cat "$LICENSE_ROOT/gitleaks/LICENSE")" = "$(printf '%s\n' 'MIT License' 'gitleaks')" ] || fail 'wrong gitleaks license contents'
+  [ "$(stat -c '%a' "$LICENSE_ROOT/gitleaks/LICENSE")" = 644 ] || fail 'wrong gitleaks license permissions'
+  [ "$(grep -c '^extract LICENSE$' "$EVENTS")" = 2 ] || fail 'wrong license extraction count'
   [ "$(grep -c "^extract gh_2.103.3_linux_$TARGETARCH/LICENSE\$" "$EVENTS")" = 1 ] || fail 'wrong gh license extraction count'
-  [ "$(grep -c '^curl ' "$EVENTS")" = 4 ] || fail 'wrong download count'
-  [ "$(grep -c '^install ' "$EVENTS")" = 7 ] || fail 'wrong install count'
+  [ "$(grep -c '^curl ' "$EVENTS")" = 5 ] || fail 'wrong download count'
+  [ "$(grep -c '^install ' "$EVENTS")" = 9 ] || fail 'wrong install count'
   check_cleanup
 
-  for asset in uv.tar.gz rtk.tar.gz fff-mcp gh.tar.gz; do
+  for asset in uv.tar.gz rtk.tar.gz fff-mcp gh.tar.gz gitleaks.tar.gz; do
     reset_case
     export FAIL_CHECKSUM="$asset"
     if sh "$installer" "$DESTINATION"; then fail "checksum rejection ignored: $asset"; fi
