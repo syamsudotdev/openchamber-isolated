@@ -153,6 +153,7 @@ Dockerfile                    Container image definition
 compose.yaml                  Container runtime configuration
 entrypoint.sh                 Container startup script
 bootstrap/opencode/           Bundled agents, skills, and nested assets
+bootstrap/gradle/             Bundled Gradle user settings and init scripts
 opencode.jsonc                Bundled OpenCode configuration
 install-android.sh            Java and Android tool installer
 tests/bootstrap.sh            Isolated bootstrap tests
@@ -219,6 +220,10 @@ Rebuilding changes the image bundle. It does not replace existing files in mount
 
 `OPENCODE_BOOTSTRAP_DIR` can override the source directory for isolated tests. Its default is `/opt/bootstrap/opencode`. Use only a trusted source directory. Bundled symlinks and special files are not supported.
 
+Startup also copies missing files from `bootstrap/gradle/` into the Gradle user home, `GRADLE_USER_HOME` or `/home/node/.gradle` by default, with the same preservation rules. `GRADLE_BOOTSTRAP_DIR` overrides the source directory; its default is `/opt/bootstrap/gradle`. The bundled `gradle.properties` limits the Gradle daemon to 10 GB of heap, the Kotlin daemon to 4 GB, and Gradle to one worker, within the default 20 GB Compose memory limit. It sets `java.io.tmpdir` to `/home/node/.cache/opencode-runtime/tmp`, because `/tmp` is a 1 GB `tmpfs`; startup creates that directory. The bundled `init.d/test-forks.gradle` runs tests in one fork at a time and restarts the fork after every two test classes. Adjust or remove the files in the Gradle user home to change these limits.
+
+The image sets `LANG=C.UTF-8` and `LC_ALL=C.UTF-8`.
+
 The bundle excludes secrets and provider authentication state. Configure provider authentication in persistent application storage at runtime. Do not copy host credentials into the image. The bundled skills are a snapshot, not proof of their original authorship, license, or current upstream version. Verify uncertain provenance and license terms before redistribution.
 
 The bundled `rtk` skill wraps the `RTK.md` instructions that `rtk init -g` generates in RTK OSS 1.0.0. RTK does not install an OpenCode skill itself; for OpenCode it installs only the plugin.
@@ -231,7 +236,7 @@ The image pins OpenChamber 2.5.3 and OpenCode 2.2.1. The build requires Node >=2
 
 The release URLs and checksums came from the respective GitHub release APIs. `uv` 0.12.19 matches the verified host version. RTK uses the `rtk-oss` release assets under the Apache License 2.0, not the commercial edition. The image retains the archive's `LICENSE` at `/usr/local/share/licenses/rtk/LICENSE` with mode `0644`. The build checks that `rtk hook opencode --help` succeeds. This help check does not install a hook or modify user configuration. `fff-mcp` 0.11.0 is a new pinned baseline, not a verified match to the host binary. The `gh` checksums come from the release's `checksums.txt`. The image retains the `gh` archive's `LICENSE` at `/usr/local/share/licenses/gh/LICENSE` with mode `0644`. The image does not contain GitHub authentication. Run `gh auth login` at runtime; `gh` stores its state in `/home/node/.config/gh` in the home volume. The `gitleaks` checksums come from the release's `checksums.txt`. The image retains the `gitleaks` archive's `LICENSE` at `/usr/local/share/licenses/gitleaks/LICENSE` with mode `0644`.
 
-The image installs the Playwright 1.64.1 command-line tool through npm and the Chromium system libraries through `playwright install-deps chromium`. The image does not contain a browser build. A project downloads the browser build for its own Playwright version, such as with `npx playwright install chromium`, into `/home/node/.cache/ms-playwright`. To update the tool, change `ARG PLAYWRIGHT_VERSION` in the `Dockerfile`.
+The image installs the Playwright 1.64.1 command-line tool through npm and the Chromium system libraries through `playwright install-deps chromium`. The image does not contain a browser build. A project downloads the browser build for its own Playwright version, such as with `npx playwright install chromium`, into `PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright`. The image sets that path explicitly. It is in the persistent cache mount, so each browser build downloads once. The system libraries make an `LD_LIBRARY_PATH` setting unnecessary. To update the tool, change `ARG PLAYWRIGHT_VERSION` in the `Dockerfile`.
 
 The bundled `bootstrap/opencode/plugins/rtk.ts` uses the official released RTK OpenCode V2 plugin. Startup preserves an existing mounted `plugins/rtk.ts`; rebuilding alone does not replace it. On the host, back up that mounted file before you explicitly replace it with the bundled version, or remove only that file to let startup copy the bundled version. Then restart through the existing startup controller. If the ADB bind policy is active, follow its managed restart procedure and use only `openchamber-managed.service`. Do not bypass the policy with a direct Compose restart. The upgrade does not automatically overwrite the plugin or modify user configuration. No RTK-specific Compose change is required.
 

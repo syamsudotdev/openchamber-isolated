@@ -1,0 +1,8 @@
+import org.gradle.api.tasks.testing.Test
+
+allprojects {
+    tasks.withType(Test).configureEach {
+        forkEvery = 2
+        maxParallelForks = 1
+    }
+}

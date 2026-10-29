@@ -55,9 +55,15 @@ bootstrap_source=${OPENCODE_BOOTSTRAP_DIR:-/opt/bootstrap/opencode}
 [ -d "$bootstrap_source" ] || bootstrap_error "missing source directory: $bootstrap_source"
 seed_directory "$bootstrap_source" "$OPENCODE_CONFIG_DIR"
 
+gradle_source=${GRADLE_BOOTSTRAP_DIR:-/opt/bootstrap/gradle}
+[ -d "$gradle_source" ] || bootstrap_error "missing source directory: $gradle_source"
+seed_directory "$gradle_source" "${GRADLE_USER_HOME:-$HOME/.gradle}"
+
+# The bundled gradle.properties points java.io.tmpdir here; Java does not create it.
 mkdir -p \
   "$OPENCODE_DATA_DIR" \
   "$XDG_CACHE_HOME/opencode" \
+  "$XDG_CACHE_HOME/opencode-runtime/tmp" \
   "$OPENCHAMBER_DATA_DIR"
 
 exec openchamber \

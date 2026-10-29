@@ -23,6 +23,9 @@ printf '%s\n' '# Bundled agent' > "$temporary/source/agents/example.md"
 printf '%s\n' '# Bundled skill' > "$temporary/source/skills/example/SKILL.md"
 printf '%s\n' 'nested asset example' > "$temporary/source/skills/example/assets/reference.txt"
 printf '%s\n' 'hidden asset example' > "$temporary/source/skills/example/.reference"
+mkdir -p "$temporary/gradle-source/init.d"
+printf '%s\n' 'org.gradle.example=bundled' > "$temporary/gradle-source/gradle.properties"
+printf '%s\n' '// bundled init script' > "$temporary/gradle-source/init.d/example.gradle"
 printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$@" > "$START_LOG"' > "$temporary/bin/openchamber"
 chmod +x "$temporary/bin/openchamber"
 export PATH="$temporary/bin:$PATH"
@@ -32,6 +35,8 @@ export XDG_CACHE_HOME="$temporary/cache"
 export OPENCHAMBER_DATA_DIR="$temporary/chamber"
 export START_LOG="$temporary/start.log"
 export OPENCODE_CONFIG_DIR="$temporary/clean"
+export GRADLE_BOOTSTRAP_DIR="$temporary/gradle-source"
+export GRADLE_USER_HOME="$temporary/gradle-home"
 
 start() {
   sh "$entrypoint"
@@ -45,6 +50,23 @@ expect_file "$OPENCODE_CONFIG_DIR/skills/example/assets/reference.txt" 'nested a
 expect_file "$OPENCODE_CONFIG_DIR/skills/example/.reference" 'hidden asset example'
 expect_file "$START_LOG" "$(printf '%s\n' --foreground --host 0.0.0.0 --port 3000)"
 [ -d "$OPENCODE_DATA_DIR" ] && [ -d "$XDG_CACHE_HOME/opencode" ] && [ -d "$OPENCHAMBER_DATA_DIR" ] || fail 'missing runtime directories'
+expect_file "$GRADLE_USER_HOME/gradle.properties" 'org.gradle.example=bundled'
+expect_file "$GRADLE_USER_HOME/init.d/example.gradle" '// bundled init script'
+[ -d "$XDG_CACHE_HOME/opencode-runtime/tmp" ] || fail 'missing Java temporary directory'
+
+# User Gradle settings must remain untouched.
+printf '%s\n' 'org.gradle.example=user' > "$GRADLE_USER_HOME/gradle.properties"
+rm "$GRADLE_USER_HOME/init.d/example.gradle"
+start
+expect_file "$GRADLE_USER_HOME/gradle.properties" 'org.gradle.example=user'
+expect_file "$GRADLE_USER_HOME/init.d/example.gradle" '// bundled init script'
+
+# A missing Gradle source must stop startup before the application runs.
+rm -f "$START_LOG"
+if GRADLE_BOOTSTRAP_DIR="$temporary/missing-gradle-source" start > "$temporary/error" 2>&1; then
+  fail 'missing Gradle source accepted'
+fi
+[ ! -e "$START_LOG" ] || fail 'application started without Gradle source'
 
 export OPENCODE_CONFIG_DIR="$temporary/partial"
 mkdir -p "$OPENCODE_CONFIG_DIR/skills/example/assets"
