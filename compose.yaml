@@ -9,6 +9,7 @@ services:
     environment:
       OPENCHAMBER_UI_PASSWORD: ${OPENCHAMBER_UI_PASSWORD:?Set OPENCHAMBER_UI_PASSWORD in .env}
       FIGMA_API_KEY: ${FIGMA_API_KEY:-}
+      CLAUDE_CODE_ENTRYPOINT: opencode-claude
       NPM_CONFIG_CACHE: /home/node/.cache/npm
     read_only: true
     security_opt:
