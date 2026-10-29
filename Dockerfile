@@ -61,10 +61,11 @@ RUN mkdir -p \
 
 COPY bootstrap/opencode/ /opt/bootstrap/opencode/
 COPY opencode.jsonc /opt/bootstrap/opencode/opencode.jsonc
+COPY bootstrap/gradle/ /opt/bootstrap/gradle/
 COPY entrypoint.sh /usr/local/bin/yolo-entrypoint
 
 RUN chmod 0555 /usr/local/bin/yolo-entrypoint \
-  && chown -R node:node /opt/bootstrap/opencode
+  && chown -R node:node /opt/bootstrap/opencode /opt/bootstrap/gradle
 
 USER node
 WORKDIR /workspace
@@ -73,6 +74,9 @@ ENV HOME=/home/node
 ENV XDG_CONFIG_HOME=/home/node/.config
 ENV XDG_DATA_HOME=/home/node/.local/share
 ENV XDG_CACHE_HOME=/home/node/.cache
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright
 
 ENV OPENCODE_CONFIG_DIR=/home/node/.config/opencode
 ENV OPENCODE_CONFIG=/home/node/.config/opencode/opencode.jsonc
