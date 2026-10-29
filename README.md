@@ -221,7 +221,9 @@ Rebuilding changes the image bundle. It does not replace existing files in mount
 
 The bundle excludes secrets and provider authentication state. Configure provider authentication in persistent application storage at runtime. Do not copy host credentials into the image. The bundled skills are a snapshot, not proof of their original authorship, license, or current upstream version. Verify uncertain provenance and license terms before redistribution.
 
-Known snapshot limitations remain. Bundled `AGENTS.md` requires an `rtk` skill, but no approved source was found. Installing the RTK executable does not provide that skill. The vendored codemap script mishandles `.gitignore` negation rules. This preexisting snapshot issue is not fixed here.
+The bundled `rtk` skill wraps the `RTK.md` instructions that `rtk init -g` generates in RTK OSS 1.0.0. RTK does not install an OpenCode skill itself; for OpenCode it installs only the plugin.
+
+Known snapshot limitations remain. The vendored codemap script mishandles `.gitignore` negation rules. This preexisting snapshot issue is not fixed here.
 
 ### Bundled Command-Line Tools
 
