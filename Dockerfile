@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim
+FROM node:26-trixie-slim
 
 ARG OPENCODE_VERSION=2.2.1
 ARG OPENCHAMBER_VERSION=2.5.3
@@ -25,7 +25,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 RUN node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 24 || (major === 24 && minor < 14)) { console.error("Node >=24.14.0 is required."); process.exit(1); }' \
-  && npm install -g \
+  && npm install -g --allow-scripts=@opencode/cli,node-pty \
     "@opencode/cli@${OPENCODE_VERSION}" \
     "@openchamber/web@${OPENCHAMBER_VERSION}" \
     "playwright@${PLAYWRIGHT_VERSION}" \

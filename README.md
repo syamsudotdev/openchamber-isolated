@@ -232,7 +232,9 @@ Known snapshot limitations remain. The vendored codemap script mishandles `.giti
 
 ### Bundled Command-Line Tools
 
-The image pins OpenChamber 2.5.3 and OpenCode 2.2.1. The build requires Node >=24.14.0 before npm installation. The image installs `uv` and `uvx` 0.12.19, RTK OSS 1.0.0, `fff-mcp` 0.11.0, GitHub CLI `gh` 2.103.3, and `gitleaks` 8.30.1 in `/usr/local/bin`. `install-tools.sh` supports release assets for Docker `TARGETARCH=amd64` or `arm64`, but the complete image accepts only `amd64` because of the Android SDK. The installer verifies fixed SHA256 checksums before extraction or installation. To update a tool, update its release URL and both architecture checksums together.
+The image uses Node.js 26 LTS on Debian 13 (trixie) through `node:26-trixie-slim`. The tag names the Debian release, so a later Debian release does not change the base without an edit. The image pins OpenChamber 2.5.3 and OpenCode 2.2.1. The build requires Node >=24.14.0 before npm installation. The npm install allows the install scripts of `@opencode/cli` and `node-pty` explicitly through `--allow-scripts`.
+
+The system Python is 3.13 on Debian 13. A virtual environment created with the Debian 12 system Python 3.11, such as a `uv tool` environment, does not work after an upgrade from a Debian 12 image. Recreate it, for example with `uv tool install --reinstall <tool>`. Libraries that were extracted from Debian 12 packages into the home volume can also fail; install the matching Debian 13 package instead. The image installs `uv` and `uvx` 0.12.19, RTK OSS 1.0.0, `fff-mcp` 0.11.0, GitHub CLI `gh` 2.103.3, and `gitleaks` 8.30.1 in `/usr/local/bin`. `install-tools.sh` supports release assets for Docker `TARGETARCH=amd64` or `arm64`, but the complete image accepts only `amd64` because of the Android SDK. The installer verifies fixed SHA256 checksums before extraction or installation. To update a tool, update its release URL and both architecture checksums together.
 
 The release URLs and checksums came from the respective GitHub release APIs. `uv` 0.12.19 matches the verified host version. RTK uses the `rtk-oss` release assets under the Apache License 2.0, not the commercial edition. The image retains the archive's `LICENSE` at `/usr/local/share/licenses/rtk/LICENSE` with mode `0644`. The build checks that `rtk hook opencode --help` succeeds. This help check does not install a hook or modify user configuration. `fff-mcp` 0.11.0 is a new pinned baseline, not a verified match to the host binary. The `gh` checksums come from the release's `checksums.txt`. The image retains the `gh` archive's `LICENSE` at `/usr/local/share/licenses/gh/LICENSE` with mode `0644`. The image does not contain GitHub authentication. Run `gh auth login` at runtime; `gh` stores its state in `/home/node/.config/gh` in the home volume. The `gitleaks` checksums come from the release's `checksums.txt`. The image retains the `gitleaks` archive's `LICENSE` at `/usr/local/share/licenses/gitleaks/LICENSE` with mode `0644`.
 
@@ -322,7 +324,7 @@ Then rebuild the image:
 docker compose build --no-cache
 ```
 
-These package pins do not make the whole image reproducible. The `node:24-bookworm-slim` tag and apt repositories can change. Package dependencies and runtime downloads can also change. Builds require network access. The host network configuration still controls connectivity and exposure; container restrictions do not make network services private.
+These package pins do not make the whole image reproducible. The `node:26-trixie-slim` tag and apt repositories can change. Package dependencies and runtime downloads can also change. Builds require network access. The host network configuration still controls connectivity and exposure; container restrictions do not make network services private.
 
 ## Troubleshooting
 
