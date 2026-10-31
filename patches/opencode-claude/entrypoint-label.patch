@@ -1,0 +1,58 @@
+diff --git a/src/auth-env.ts b/src/auth-env.ts
+index 34b2916..4de43e2 100644
+--- a/src/auth-env.ts
++++ b/src/auth-env.ts
+@@ -18,6 +18,14 @@ export const AUTH_OVERRIDE_ENV_KEYS = Object.freeze([
+  */
+ export const MCP_DESCRIPTION_LIMIT = 8192;
+ 
++/**
++ * Entrypoint label the CLI sends with every request. Left empty, the Agent
++ * SDK sets sdk-ts, and sdk-* labels drain the 5-hour window faster for the
++ * same work (anthropics/claude-code#97074). An sdk-* value inherited from an
++ * SDK-launched parent is replaced too; any other value the host set wins.
++ */
++export const CLAUDE_CODE_ENTRYPOINT = "opencode-claude";
++
+ /**
+  * Build a child-process env for Claude Code subscription mode.
+  * Starts from process.env (or provided base), preserves PATH, then deletes
+@@ -33,5 +41,9 @@ export function buildClaudeCodeChildEnv(
+   if (!env.CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH?.trim()) {
+     env.CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH = String(MCP_DESCRIPTION_LIMIT);
+   }
++  const entrypoint = env.CLAUDE_CODE_ENTRYPOINT?.trim();
++  if (!entrypoint || entrypoint.startsWith("sdk-")) {
++    env.CLAUDE_CODE_ENTRYPOINT = CLAUDE_CODE_ENTRYPOINT;
++  }
+   return env;
+ }
+diff --git a/test/entrypoint-regression.ts b/test/entrypoint-regression.ts
+new file mode 100644
+index 0000000..a88c21c
+--- /dev/null
++++ b/test/entrypoint-regression.ts
+@@ -0,0 +1,23 @@
++/**
++ * The Agent SDK labels requests sdk-ts when CLAUDE_CODE_ENTRYPOINT is empty,
++ * and sdk-* labels drain the 5-hour window faster for the same work
++ * (anthropics/claude-code#97074). The child env must carry a non-sdk label,
++ * also when an SDK-launched parent passed sdk-* down, and keep a label the
++ * host chose.
++ *
++ * Run: bun test/entrypoint-regression.ts
++ */
++import assert from "node:assert/strict";
++import { buildClaudeCodeChildEnv } from "../src/auth-env.ts";
++
++assert.equal(buildClaudeCodeChildEnv({ PATH: "/bin" }).CLAUDE_CODE_ENTRYPOINT, "opencode-claude");
++assert.equal(buildClaudeCodeChildEnv({ CLAUDE_CODE_ENTRYPOINT: " " }).CLAUDE_CODE_ENTRYPOINT, "opencode-claude");
++assert.equal(buildClaudeCodeChildEnv({ CLAUDE_CODE_ENTRYPOINT: "sdk-ts" }).CLAUDE_CODE_ENTRYPOINT, "opencode-claude");
++assert.equal(buildClaudeCodeChildEnv({ CLAUDE_CODE_ENTRYPOINT: "sdk-cli" }).CLAUDE_CODE_ENTRYPOINT, "opencode-claude");
++assert.equal(
++  buildClaudeCodeChildEnv({ CLAUDE_CODE_ENTRYPOINT: "claude-vscode" }).CLAUDE_CODE_ENTRYPOINT,
++  "claude-vscode",
++  "a non-sdk label the host set wins",
++);
++
++console.log("entrypoint regression ok");

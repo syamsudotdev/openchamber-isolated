@@ -156,6 +156,8 @@ bootstrap/opencode/           Bundled agents, skills, and nested assets
 bootstrap/gradle/             Bundled Gradle user settings and init scripts
 opencode.jsonc                Bundled OpenCode configuration
 install-android.sh            Java and Android tool installer
+install-opencode-claude.sh    Patched opencode-claude plugin builder
+patches/opencode-claude/      Patches for the opencode-claude plugin
 tests/bootstrap.sh            Isolated bootstrap tests
 tests/android-install.sh      Isolated Android installer tests
 tests/android-runtime.sh      Disposable Android runtime checks
@@ -242,7 +244,7 @@ The image installs the Playwright 1.64.1 command-line tool through npm and the C
 
 The bundled `bootstrap/opencode/plugins/rtk.ts` uses the official released RTK OpenCode V2 plugin. Startup preserves an existing mounted `plugins/rtk.ts`; rebuilding alone does not replace it. On the host, back up that mounted file before you explicitly replace it with the bundled version, or remove only that file to let startup copy the bundled version. Then restart through the existing startup controller. If the ADB bind policy is active, follow its managed restart procedure and use only `openchamber-managed.service`. Do not bypass the policy with a direct Compose restart. The upgrade does not automatically overwrite the plugin or modify user configuration. No RTK-specific Compose change is required.
 
-The bundled configuration loads `oh-my-opencode-slim` without a version pin, so each fresh download can get a newer release. It pins the `@openchamber/opencode-claude@1.6.0` plugin, which provides the `claude` preset's Claude Code models. Compose sets `CLAUDE_CODE_ENTRYPOINT=opencode-claude`; that plugin passes the value to Claude Code. OpenCode still downloads the plugins at runtime. The image does not contain an offline plugin bundle. Plugin transitive dependencies and other runtime downloads can change and require network access. Other optional tools mentioned by skills are not installed unless listed here. Plannotator is not installed.
+The bundled configuration loads `oh-my-opencode-slim` without a version pin, so each fresh download can get a newer release. The `opencode-claude` plugin provides the `claude` preset's Claude Code models. `install-opencode-claude.sh` builds it into `/opt/opencode-claude` at image build: it clones tag `v1.6.0`, checks the commit, applies `patches/opencode-claude/*.patch`, and runs the patch's regression test. The patch sets `CLAUDE_CODE_ENTRYPOINT=opencode-claude` when the value is empty or starts with `sdk-`, because `sdk-*` labels use the 5-hour limit faster ([anthropics/claude-code#97074](https://github.com/anthropics/claude-code/issues/97074)). Compose also sets that value. To update the plugin, change `version` and `commit` in the script, then rebase the patch. Startup does not replace an existing `opencode.jsonc`; point its `plugins` entry to `/opt/opencode-claude` to use the image build. OpenCode still downloads `oh-my-opencode-slim` at runtime. Plugin transitive dependencies and other runtime downloads can change and require network access. Other optional tools mentioned by skills are not installed unless listed here. Plannotator is not installed.
 
 ### Java and Android Tools
 
