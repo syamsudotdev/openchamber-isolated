@@ -234,7 +234,7 @@ Known snapshot limitations remain. The vendored codemap script mishandles `.giti
 
 ### Bundled Command-Line Tools
 
-The image uses Node.js 26 LTS on Debian 13 (trixie) through `node:26-trixie-slim`. The tag names the Debian release, so a later Debian release does not change the base without an edit. The image pins OpenChamber 2.5.3 and OpenCode 2.2.1. The build requires Node >=24.14.0 before npm installation. The npm install allows the install scripts of `@opencode/cli` and `node-pty` explicitly through `--allow-scripts`.
+The image uses Node.js 26 LTS on Debian 13 (trixie) through `node:26-trixie-slim`. The tag names the Debian release, so a later Debian release does not change the base without an edit. The image pins OpenChamber 2.5.3 and OpenCode 2.2.5. The build requires Node >=24.14.0 before npm installation. The npm install allows the install scripts of `@opencode/cli` and `node-pty` explicitly through `--allow-scripts`.
 
 The system Python is 3.13 on Debian 13. A virtual environment created with the Debian 12 system Python 3.11, such as a `uv tool` environment, does not work after an upgrade from a Debian 12 image. Recreate it, for example with `uv tool install --reinstall <tool>`. Libraries that were extracted from Debian 12 packages into the home volume can also fail; install the matching Debian 13 package instead. The image installs `uv` and `uvx` 0.12.19, RTK OSS 1.0.0, `fff-mcp` 0.11.0, GitHub CLI `gh` 2.103.3, and `gitleaks` 8.30.1 in `/usr/local/bin`. `install-tools.sh` supports release assets for Docker `TARGETARCH=amd64` or `arm64`, but the complete image accepts only `amd64` because of the Android SDK. The installer verifies fixed SHA256 checksums before extraction or installation. To update a tool, update its release URL and both architecture checksums together.
 
@@ -316,7 +316,7 @@ For a manual pin change, keep both README references consistent with each Docker
 Change these build arguments in `Dockerfile`:
 
 ```dockerfile
-ARG OPENCODE_VERSION=2.2.1
+ARG OPENCODE_VERSION=2.2.5
 ARG OPENCHAMBER_VERSION=2.5.3
 ```
 
