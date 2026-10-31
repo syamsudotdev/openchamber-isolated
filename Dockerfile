@@ -48,6 +48,10 @@ COPY install-android.sh /opt/bootstrap/install-android.sh
 RUN TARGETARCH="${TARGETARCH}" sh /opt/bootstrap/install-android.sh \
   && chown -R node:node /opt/android-sdk
 
+COPY install-opencode-claude.sh /opt/bootstrap/install-opencode-claude.sh
+COPY patches/opencode-claude/ /opt/bootstrap/patches/opencode-claude/
+RUN sh /opt/bootstrap/install-opencode-claude.sh /opt/opencode-claude
+
 RUN mkdir -p \
     /workspace \
     /opt/bootstrap \

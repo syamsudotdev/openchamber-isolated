@@ -59,6 +59,6 @@
     "provider": "random"
   },
   "plugins": [
-    "@openchamber/opencode-claude@1.6.0"
+    "/opt/opencode-claude"
   ]
 }

@@ -13,5 +13,7 @@
 !/tests/
 !/install-tools.sh
 !/install-android.sh
+!/install-opencode-claude.sh
+!/patches/
 !/adb-bind-policy/
 !/adb-bind-policy/**
