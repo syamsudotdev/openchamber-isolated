@@ -41,7 +41,8 @@ A `.cer` without its private key is insufficient.
 Check each supplied profile's type at intake from its public metadata ([reference section 7](references/build.md#7-validate-signing-inputs)), before requesting the password.
 A USB install needs a development profile that lists the target UDID and allows `get-task-allow: true`, signed by an `Apple Development:` or legacy `iPhone Developer:` certificate.
 An App Store or TestFlight profile (no devices, `beta-reports-active`) with an `Apple Distribution:` certificate is the CI identity; return it with the development-profile steps.
-Deliver files and secrets through the reference's container-safe routes; take the password through a protected secret-file mechanism and read it with `-passin file:`.
+Place, read, and check every secret under the mandatory [secret placement and leak handling](references/build.md#secret-placement-and-leak-handling) rules; read the password only with `-passin file:`.
+If a secret appears or may have appeared in the conversation, a command line, a log, or a commit, stop and warn the user without repeating the value.
 Missing signing inputs block the default goal; do not offer an automatic unsigned fallback or claim unsigned success.
 Record any explicit user decision to narrow the goal to unsigned output.
 Record signing approval and the separate approved key-handling method before signing.

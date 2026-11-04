@@ -9,7 +9,7 @@
 - Request the default signed goal's identity/private key, profiles, bundle/team IDs, and target through the main skill's step 0.
 - Obtain separate signing approval and explicit security approval for the selected key-handling method.
 
-The framework and unsigned-intermediate pipeline adapts steps 7–11 of `/workspace/ios-linux-probe/LINUX-IOS-IPA-BUILD.md`, source SHA256 `<redacted>`; preserve that source unchanged.
+The framework and unsigned-intermediate pipeline adapts steps 7–11 of an internal Linux iOS IPA build guide (`LINUX-IOS-IPA-BUILD.md`), source SHA256 `<redacted>`; preserve that source unchanged.
 The fresh-Debian procedure was not clean-room tested; other-distribution adaptations are not automatically validated.
 The examples describe Debian paths, not universal Linux package or compiler compatibility.
 
@@ -297,28 +297,8 @@ Decode the profile plist to a private scratch path, read it with a plist parser,
 - App Store or TestFlight distribution, not installable over USB: no `ProvisionedDevices`, `beta-reports-active` present, `get-task-allow` `false`, subject `Apple Distribution:`. This is the CI identity; ask for a development set instead.
 - For a new development set, give the human the portal sequence: register the UDID under Devices, create an Apple Development certificate (a CSR from `openssl req -new -newkey rsa:2048 -nodes` works on Linux), convert the downloaded DER `.cer` with `openssl x509 -inform DER`, export the `.p12` with `openssl pkcs12 -export`, then create an iOS App Development profile with that certificate and device.
 
-Rootless Docker maps container users to host subordinate IDs, so a file created on the host appears owned by `root` inside the container and an owner-only file is unreadable there.
-Keep signing inputs out of a shared workspace and out of git.
-Use one of these delivery approaches; record which one is active.
-
-Approach A, persistent host mounts with a Compose file secret (for example the `openchamber-isolated` `compose.yaml`):
-- Inputs: a read-only host directory at `/home/node/ios-signing` with the `.p12` and profiles.
-- Password: the Compose file secret `/run/secrets/ios_p12_password`.
-- Outputs: a writable host directory at `/home/node/ios-artifacts` for signed IPAs and evidence.
-- Without Swarm, Compose bind-mounts a `file:` secret and ignores its `uid`, `gid`, and `mode` options. The human gives each host path the host ID of container `node` (for example `100999`, calculated from `/proc/self/uid_map`) and mode `600`, with directories `700`.
-- The human writes the password file on the host without echo, for example `sudo install -o 100999 -g 100999 -m 600 /dev/null ios-signing/p12-password`, then `read -rs PW && printf '%s' "$PW" | sudo tee ios-signing/p12-password >/dev/null; unset PW`.
-- Verify as the container user with `test -r` only; never print the file. The container must be recreated after a mount or secret change.
-
-Approach B, stream each file into a writable container path as the container user:
-
-```sh
-docker exec -u node -i ExampleContainer sh -c 'umask 077; mkdir -p "$HOME/.ios-signing"; cat > "$HOME/.ios-signing/AppleDevelopment.p12"' < AppleDevelopment.p12
-```
-Repeat for the profile; require mode `600` and the container user as owner.
-
-Approach C, for the password only: a protected secret-file mechanism, for example a secret-request card that writes an owner-only file. Such a file can expire; use it as a fallback when no persistent password file exists.
-
-In every approach, read the password only as `-passin file:<path>`, never through argv, an environment variable, or `-passin env:`.
+Place and read every signing secret under [secret placement and leak handling](#secret-placement-and-leak-handling).
+Check the `.p12` against the profile without extracting the private key:
 
 ```sh
 openssl pkcs12 -in /secure/ios/AppleDevelopment.p12 -passin file:/secure/ios/p12-password -nokeys -clcerts | openssl x509 -noout -fingerprint -sha256
@@ -326,6 +306,33 @@ openssl pkcs12 -in /secure/ios/AppleDevelopment.p12 -passin file:/secure/ios/p12
 Compare this certificate-only fingerprint with the profile's `DeveloperCertificates` entry (`openssl x509 -inform DER -noout -fingerprint -sha256`); no private key is extracted.
 
 `openssl pkcs12 -info -noout` showing a `Shrouded Keybag` confirms that the `.p12` carries a private key.
+
+### Secret placement and leak handling
+
+Secrets are the `.p12`, any private key, the `.p12` password and password files, decrypted PEM files, and signing-service credentials.
+These rules are mandatory for every host, container, and delivery method.
+
+Placement:
+- Keep secrets only in owner-only locations that the user designates: directories `700`, files `600`, owned by the user that runs the signer.
+- Never place secrets in a shared workspace, a repository, a build or artifact output, an image layer, an environment variable, or a log directory.
+- Before using a location, confirm it is not tracked or committable (`git check-ignore`, or a path outside every repository).
+- In a user-namespaced or rootless container, host ownership must map to the container user. Ask the human to fix ownership on the host; do not widen the mode to work around it.
+- Keep a decrypted key only in private temporary staging, preferably memory-backed, inside one guarded command with cleanup armed before the key exists.
+- Signed IPAs and evidence are not secrets; keep them separate from the signing inputs.
+
+No leaks to the conversation or the shell:
+- Ask for paths and nonsecret identifiers only. Never ask the user to paste a password, key, or `.p12` contents into the conversation; use a protected secret-file mechanism instead.
+- Read a password only through a file input such as `-passin file:<path>`. Never pass it through argv, an environment variable, `-passin env:`, a heredoc, or an interactive echo.
+- Never print, `cat`, `head`, encode, hash-dump, `diff`, or upload a secret file.
+- Check secrets only through results that hold no secret: `test -r`, `test -s`, exit codes, file modes, and public-certificate fingerprints.
+- Disable shell tracing (`set -x`) and debug logging in any command that touches a secret. Send output that can contain key material to a private staging file or `/dev/null`, never to the conversation or a log.
+- Never send a secret to an external service or tool. Before each commit, inspect `git status` and run a secret scan when one is available.
+
+If a leak happens:
+- A leak is a secret value, or a secret file's contents, that appears or may have appeared in the conversation, a command line, shell history, a process environment, a log, a shared workspace, an artifact, or a commit.
+- Stop the task at once and warn the user. State what leaked, where, and when. Never repeat the secret value in the warning.
+- Recommend rotation: change the `.p12` password, or revoke the certificate and issue a new identity, and replace any exposed credential.
+- Remove or rewrite the exposed copy only with the user's approval. Do not continue signing until the user decides.
 
 ### Signing-input facts
 

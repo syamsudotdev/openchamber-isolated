@@ -91,6 +91,7 @@ Read [signing and device readiness](references/debian12.md#6-prepare-signing-and
 Inspect the selected signer's actual version, help, and credential-input capabilities before proposing a signing route.
 Qualify a developer certificate and private key (`.p12` or a supported compatible identity), a matching `.mobileprovision`, and an approved secure signing route.
 Record paths and safe identifiers only for inputs already provided. Keep private keys and passwords out of chat, command arguments, history, and logs.
+Apply the build skill's mandatory secret placement and leak handling rules (`kmp-ios-build-linux/references/build.md#secret-placement-and-leak-handling`). If a secret appears or may have appeared in the conversation, a command line, a log, or a commit, stop and warn the user without repeating the value.
 Treat private-key handling as explicit security scope; restrictive file permissions alone do not approve an unencrypted identity.
 For the protected-file OpenSSL route, qualify explicit approval, private temporary staging, and cleanup safeguards from the reference; leave decryption and signing commands to the build skill.
 If credentials or a safe signing route are missing, record a signed-build blocker rather than unsigned success.
