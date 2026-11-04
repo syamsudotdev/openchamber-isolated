@@ -298,14 +298,27 @@ Decode the profile plist to a private scratch path, read it with a plist parser,
 - For a new development set, give the human the portal sequence: register the UDID under Devices, create an Apple Development certificate (a CSR from `openssl req -new -newkey rsa:2048 -nodes` works on Linux), convert the downloaded DER `.cer` with `openssl x509 -inform DER`, export the `.p12` with `openssl pkcs12 -export`, then create an iOS App Development profile with that certificate and device.
 
 Rootless Docker maps container users to host subordinate IDs, so a file created on the host appears owned by `root` inside the container and an owner-only file is unreadable there.
-Have the human stream each file into the container as the container user:
+Keep signing inputs out of a shared workspace and out of git.
+Use one of these delivery approaches; record which one is active.
+
+Approach A, persistent host mounts with a Compose file secret (for example the `openchamber-isolated` `compose.yaml`):
+- Inputs: a read-only host directory at `/home/node/ios-signing` with the `.p12` and profiles.
+- Password: the Compose file secret `/run/secrets/ios_p12_password`.
+- Outputs: a writable host directory at `/home/node/ios-artifacts` for signed IPAs and evidence.
+- Without Swarm, Compose bind-mounts a `file:` secret and ignores its `uid`, `gid`, and `mode` options. The human gives each host path the host ID of container `node` (for example `100999`, calculated from `/proc/self/uid_map`) and mode `600`, with directories `700`.
+- The human writes the password file on the host without echo, for example `sudo install -o 100999 -g 100999 -m 600 /dev/null ios-signing/p12-password`, then `read -rs PW && printf '%s' "$PW" | sudo tee ios-signing/p12-password >/dev/null; unset PW`.
+- Verify as the container user with `test -r` only; never print the file. The container must be recreated after a mount or secret change.
+
+Approach B, stream each file into a writable container path as the container user:
 
 ```sh
-docker exec -u node -i ExampleContainer sh -c 'umask 077; mkdir -p /workspace/.ios-signing; cat > /workspace/.ios-signing/AppleDevelopment.p12' < AppleDevelopment.p12
+docker exec -u node -i ExampleContainer sh -c 'umask 077; mkdir -p "$HOME/.ios-signing"; cat > "$HOME/.ios-signing/AppleDevelopment.p12"' < AppleDevelopment.p12
 ```
 Repeat for the profile; require mode `600` and the container user as owner.
 
-Take the `.p12` password through a protected secret-file mechanism (for example a secret-request card that writes an owner-only file), and read it only as `-passin file:<path>`.
+Approach C, for the password only: a protected secret-file mechanism, for example a secret-request card that writes an owner-only file. Such a file can expire; use it as a fallback when no persistent password file exists.
+
+In every approach, read the password only as `-passin file:<path>`, never through argv, an environment variable, or `-passin env:`.
 
 ```sh
 openssl pkcs12 -in /secure/ios/AppleDevelopment.p12 -passin file:/secure/ios/p12-password -nokeys -clcerts | openssl x509 -noout -fingerprint -sha256
