@@ -11,6 +11,7 @@ services:
       FIGMA_API_KEY: ${FIGMA_API_KEY:-}
       CLAUDE_CODE_ENTRYPOINT: opencode-claude
       NPM_CONFIG_CACHE: /home/node/.cache/npm
+      USBMUXD_SOCKET_ADDRESS: UNIX:/run/usbmux-relay/usbmuxd
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -30,9 +31,18 @@ services:
       - ${OPENCODE_WORKSPACE:-./workspace}:/workspace
       - ${OPENCODE_CONFIG:-./config}:/home/node/.config/opencode
       - ${OPENCODE_DATA:-./data}:/home/node/.local/share/opencode
+      - ${HOME}/.local/share/usbmux-relay:/run/usbmux-relay
+      - ${IOS_SIGNING_DIR:-./ios-signing}:/home/node/ios-signing:ro
+      - ${IOS_ARTIFACTS_DIR:-./ios-artifacts}:/home/node/ios-artifacts
+    secrets:
+      - ios_p12_password
     stdin_open: true
     tty: true
 
 volumes:
   android-sdk:
   opencode-home:
+
+secrets:
+  ios_p12_password:
+    file: ${IOS_P12_PASSWORD_FILE:-./ios-signing/p12-password}

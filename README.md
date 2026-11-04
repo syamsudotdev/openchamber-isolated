@@ -148,6 +148,8 @@ The installer is dormant: it does not enable the managed service. Follow the pol
 cache/        Persistent OpenCode plugin and package cache
 config/       OpenCode configuration
 data/         Persistent OpenCode data
+ios-signing/                  iOS signing inputs (not tracked)
+ios-artifacts/                Signed IPAs and build evidence (not tracked)
 workspace/                    OpenCode workspace
 Dockerfile                    Container image definition
 compose.yaml                  Container runtime configuration
@@ -205,8 +207,34 @@ You can set these Compose variables in `.env`:
 - `OPENCODE_CPUS`
 - `OPENCODE_TMP_SIZE`
 - `OPENCODE_RUN_SIZE`
+- `IOS_SIGNING_DIR` (default `./ios-signing`)
+- `IOS_ARTIFACTS_DIR` (default `./ios-artifacts`)
+- `IOS_P12_PASSWORD_FILE` (default `./ios-signing/p12-password`)
 
 Do not store credentials in this repository.
+
+### iOS Signing and Device Access
+
+Compose mounts the host usbmux relay directory `~/.local/share/usbmux-relay` at `/run/usbmux-relay` and sets `USBMUXD_SOCKET_ADDRESS=UNIX:/run/usbmux-relay/usbmuxd`. The host must provide the relay socket in that directory.
+
+Compose also mounts these host directories. They persist across container replacement and `docker compose down -v`. Git ignores them, and they stay outside `/workspace`:
+
+- `IOS_SIGNING_DIR` at `/home/node/ios-signing`, read-only: the `.p12`, the provisioning profiles, and the password file.
+- `IOS_ARTIFACTS_DIR` at `/home/node/ios-artifacts`, writable: signed IPAs and build evidence.
+
+Compose provides the `.p12` password as the file secret `/run/secrets/ios_p12_password` from `IOS_P12_PASSWORD_FILE`. The container does not start when this file is missing. Without Swarm, Compose bind-mounts the host file read-only and ignores the long-syntax `uid`, `gid`, and `mode` options. Give each path the container `node` owner from the [UID/GID mapping](#uidgid-mapping-setup) calculation. The commands use the example value `100999`:
+
+```bash
+sudo install -d -o 100999 -g 100999 -m 700 ios-signing ios-artifacts
+sudo install -o 100999 -g 100999 -m 600 /dev/null ios-signing/p12-password
+read -rs PW && printf '%s' "$PW" | sudo tee ios-signing/p12-password >/dev/null; unset PW
+```
+
+`tee` writes into the existing file, so the file never has a wider mode.
+
+Put the `.p12` and the profiles in `ios-signing/` with the same owner and mode `600`. Then recreate the container.
+
+Read the password only as `openssl … -passin file:/run/secrets/ios_p12_password`. Do not put it in an environment variable, `.env`, or `-passin env:`, because every process inherits the environment and `docker inspect` shows it. The agent user `node` can read the password file. The file only removes the need to supply the password for each session; an OpenChamber secret card remains a fallback. Keep the decrypted key on the `/tmp` `tmpfs`, inside the one guarded signing command.
 
 ### Bundled OpenCode Configuration
 
@@ -217,6 +245,13 @@ The bundled `opencode.jsonc` adds the remote Atlassian MCP server and the local 
 Startup preserves every existing destination. It does not replace user files, directories, or file symlinks, including dangling symlinks. A directory symlink or a file that blocks a required directory stops startup with an error. Startup does not follow destination directory symlinks. Do not change configuration paths concurrently with startup.
 
 Rebuilding changes the image bundle. It does not replace existing files in mounted configuration. New bundled files are added on the next startup. To adopt an updated bundled file, back up the mounted file and remove only that file before startup. The next startup copies the image version.
+
+Edits to the live skills in `config/skills/` do not return to `bootstrap/opencode/skills/`. To track a changed skill, compare and copy it on the host, then review and commit the result:
+
+```bash
+diff -ru bootstrap/opencode/skills/<name> config/skills/<name>
+cp -R config/skills/<name>/. bootstrap/opencode/skills/<name>/
+```
 
 `OPENCODE_BOOTSTRAP_DIR` can override the source directory for isolated tests. Its default is `/opt/bootstrap/opencode`. Use only a trusted source directory. Bundled symlinks and special files are not supported.
 
