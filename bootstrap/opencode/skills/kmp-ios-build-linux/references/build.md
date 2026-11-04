@@ -9,7 +9,7 @@
 - Request the default signed goal's identity/private key, profiles, bundle/team IDs, and target through the main skill's step 0.
 - Obtain separate signing approval and explicit security approval for the selected key-handling method.
 
-The framework and unsigned-intermediate pipeline adapts steps 7–11 of an internal Linux iOS IPA build guide (`LINUX-IOS-IPA-BUILD.md`), source SHA256 `<redacted>`; preserve that source unchanged.
+Provenance: the framework and unsigned-intermediate pipeline was adapted from an internal guide; its source SHA256 is `<redacted>`. The guide is not required.
 The fresh-Debian procedure was not clean-room tested; other-distribution adaptations are not automatically validated.
 The examples describe Debian paths, not universal Linux package or compiler compatibility.
 
@@ -50,6 +50,11 @@ Reuse the qualified port, toolchain, and caches; isolate everything the run writ
 git -C /home/iosbuilder/ios-linux/src/ExampleApp archive abc1234 | tar -x -C /home/iosbuilder/ios-linux/gate-next/app-src
 ```
 Export the exact revision into a fresh, empty gate directory; compare the tracked-file count with `git ls-tree -r --name-only`.
+`git archive` omits submodules, Git LFS objects, and ignored build files; add each required one explicitly.
+
+- Export each submodule revision and fetch the LFS objects, or record their absence as a limit.
+- Copy only required ignored build files, such as `local.properties`, and list each one with its hash.
+- For a non-Git project, copy a source snapshot and record its SHA256.
 
 - Copy the prior gate's build scripts and repoint their project directory to the new export.
 - Copy any Gradle init script that records evidence or guards outputs, and repoint its probe root and guard paths. An init script left pointing at the prior gate appends to or overwrites that gate's logs, and its guard rejects new destinations.
@@ -190,7 +195,7 @@ assert not any("Icon" in k for k in p), "merge with existing icon keys instead"
 p["CFBundleIcons"] = {"CFBundlePrimaryIcon": {"CFBundleIconFiles": ["AppIcon60x60"]}}
 plistlib.dump(p, open(info, "wb"), fmt=plistlib.FMT_XML)
 ```
-Run it with `uv run --with pillow python -I`. Pillow is a build-time dependency of this step only.
+Run it with setup's qualified Python 3 in isolated mode and a pinned Pillow, for example `uv run --with pillow==<pinned> python -I …`. Pillow is a build-time dependency of this step only.
 
 - Apply it to the extracted unsigned IPA, then repack with the setup-verified `zip` from inside the extraction directory (`zip -qr -X OUT.ipa Payload`). Require that the entry list differs from the original only by the icon files, and that the executable is byte-identical and keeps its executable mode.
 - zsign `-I icon.png` is an alternative during signing. Its v1.1.3 source (`ZBundle::ChangeAppIcon`) writes the given bytes unchanged as one `AppIcon60x60@2x.png` and adds the same keys. It does not resize, so it produces no `@3x` file.
@@ -213,6 +218,7 @@ Select the SwiftPM packaging root containing the real host and compiled framewor
 env PATH=/home/iosbuilder/ios-linux/tools/swift/usr/bin:/home/iosbuilder/ios-linux/config/swiftpm/swift-sdks/darwin.artifactbundle/toolset/bin:/home/iosbuilder/ios-linux/tools/xtool/squashfs-root/usr/bin:/usr/local/bin:/usr/bin:/bin SWIFT_EXEC=/home/iosbuilder/ios-linux/tools/swift/usr/bin/swiftc XDG_CONFIG_HOME=/home/iosbuilder/ios-linux/config /home/iosbuilder/ios-linux/tools/xtool/squashfs-root/AppRun dev build --configuration release --ipa
 ```
 Build Release and package an unsigned IPA with the actual setup paths; omit `--sign`.
+The example paths are placeholders. xtool 1.22.2 keeps its saved login token in `$HOME/.config/xtool/data/XTLAuthToken`, under `$HOME`, not under `XDG_CONFIG_HOME`; keep that directory under [secret placement and leak handling](#secret-placement-and-leak-handling). The Swift SDK under `XDG_CONFIG_HOME` is not a secret.
 
 Require exit zero, xtool's completion message, and the actual unsigned-intermediate IPA path.
 Use `/home/iosbuilder/ios-linux/src/ExampleApp/xtool/ExampleApp.ipa` only if this build reports that output.
@@ -258,7 +264,7 @@ Use a link map or capable symbol inspection to identify the expected compiled Ko
 A header, copied framework, or IPA hash alone does not prove Kotlin linkage.
 For a rebuild, choose a string the new revision added (for example a renamed resource accessor) and one it removed; require the first in the executable bytes and the second absent.
 Without a Mach-O inspector, parse the header directly: magic `0xfeedfacf`, CPU type `0x0100000c`, file type `2` (`MH_EXECUTE`), `LC_BUILD_VERSION` (`0x32`) platform `2` (iOS) and its `minos`, and `LC_MAIN` (`0x80000028`).
-Require `AppIcon60x60@2x.png`, `AppIcon60x60@3x.png`, and `CFBundleIcons` in the app (see "App icon without actool").
+Require `AppIcon60x60@2x.png`, `AppIcon60x60@3x.png`, and `CFBundleIcons` in the app (see [app icon without actool](#app-icon-without-actool)).
 Linux xtool packaging compiles no asset catalog and copies no privacy manifest unless configured; record other missing catalog content or `PrivacyInfo.xcprivacy` as a known limit of the artifact.
 Report incomplete validation if inspection tools or linkage evidence are unavailable.
 
@@ -278,7 +284,7 @@ Report `UnsignedIntermediate`; continue to signing for the default goal, subject
 
 ## 7. Validate signing inputs
 
-Require setup's actual verified zsign v1.1.3 binary path and provenance; do not guess a Debian package or binary location.
+Require setup's verified zsign binary (tested: v1.1.3); for another version, verify the same `-k`/`-c`/`-m`/`-e`/`-t` behavior. Do not guess a Debian package or binary location.
 zsign is a community tool, not an Apple tool.
 xtool 1.22.2 `dev build --sign` uses xtool authentication rather than supplied `.p12` import; preserve unsigned packaging above and sign its output separately.
 Use local protected paths such as `/secure/ios/AppleDevelopment.p12`, `/secure/ios/p12-password`, and `/secure/ios/App.mobileprovision`.
@@ -287,15 +293,17 @@ A `.cer` without its private key cannot sign; missing inputs block the signed go
 ### Intake: profile type and container delivery
 
 Check the profile type first; it needs no password.
+Decode the profile into a new private scratch directory outside the signing-inputs folder, in one command:
 
 ```sh
-openssl cms -verify -noverify -inform DER -in /secure/ios/App.mobileprovision -out /secure/ios/staging-profile.plist
+d=$(mktemp -d) && openssl cms -verify -noverify -inform DER -in /secure/ios/App.mobileprovision -out "$d/profile.plist" && echo "$d"
 ```
-Decode the profile plist to a private scratch path, read it with a plist parser, and delete it afterwards.
+
+Record the printed directory and use that literal path in later commands. Read `profile.plist` there with a plist parser, then delete the directory with `rm -r -- <printed directory>`.
 
 - Development, usable for USB install: `ProvisionedDevices` contains the target UDID, `Entitlements.get-task-allow` is `true`, and the `DeveloperCertificates` entry's subject starts with `Apple Development:` or the legacy `iPhone Developer:` (both are development identities).
 - App Store or TestFlight distribution, not installable over USB: no `ProvisionedDevices`, `beta-reports-active` present, `get-task-allow` `false`, subject `Apple Distribution:`. This is the CI identity; ask for a development set instead.
-- For a new development set, give the human the portal sequence: register the UDID under Devices, create an Apple Development certificate (a CSR from `openssl req -new -newkey rsa:2048 -nodes` works on Linux), convert the downloaded DER `.cer` with `openssl x509 -inform DER`, export the `.p12` with `openssl pkcs12 -export`, then create an iOS App Development profile with that certificate and device.
+- For a new development set, give the human these steps; the human runs them, not the agent. Work inside an owner-only `700` directory with `umask 077`: register the UDID under Devices; create an Apple Development certificate (a CSR from `openssl req -new -newkey rsa:2048 -nodes` works on Linux); convert the downloaded DER `.cer` with `openssl x509 -inform DER`; export the `.p12` with `openssl pkcs12 -export -passout file:<pwfile>`; then create an iOS App Development profile with that certificate and device. Delete the unencrypted `-nodes` key after export. All files follow [secret placement and leak handling](#secret-placement-and-leak-handling).
 
 Place and read every signing secret under [secret placement and leak handling](#secret-placement-and-leak-handling).
 Check the `.p12` against the profile without extracting the private key:
@@ -305,25 +313,28 @@ openssl pkcs12 -in /secure/ios/AppleDevelopment.p12 -passin file:/secure/ios/p12
 ```
 Compare this certificate-only fingerprint with the profile's `DeveloperCertificates` entry (`openssl x509 -inform DER -noout -fingerprint -sha256`); no private key is extracted.
 
-`openssl pkcs12 -info -noout` showing a `Shrouded Keybag` confirms that the `.p12` carries a private key.
+Count the private-key bag without a prompt: `openssl pkcs12 -info -noout -in /secure/ios/AppleDevelopment.p12 -passin file:/secure/ios/p12-password 2>&1 >/dev/null | grep -c 'Shrouded Keybag'` prints a count and no key material; a count of `1` or more confirms that the `.p12` carries a private key.
 
 ### Secret placement and leak handling
 
-Secrets are the `.p12`, any private key, the `.p12` password and password files, decrypted PEM files, and signing-service credentials.
+Secrets are the `.p12`, any private key, the `.p12` password and password files, decrypted PEM files, signing-service credentials, an Apple ID login, and xtool's saved login token.
 These rules are mandatory for every host, container, and delivery method.
 
 Placement:
-- Keep secrets only in owner-only locations that the user designates: directories `700`, files `600`, owned by the user that runs the signer.
+- Keep secrets only in owner-only locations that the user designates. Files: owned by the user that runs the signer, with no group or other access (`600` or `400`). Directories: `700`, or a read-only runtime secret mount that group and others cannot write.
 - Never place secrets in a shared workspace, a repository, a build or artifact output, an image layer, an environment variable, or a log directory.
 - Before using a location, confirm it is not tracked or committable (`git check-ignore`, or a path outside every repository).
 - In a user-namespaced or rootless container, host ownership must map to the container user. Ask the human to fix ownership on the host; do not widen the mode to work around it.
 - Keep a decrypted key only in private temporary staging, preferably memory-backed, inside one guarded command with cleanup armed before the key exists.
+- Keep xtool's data directory (`$HOME/.config/xtool` in xtool 1.22.2, which holds the saved login token) outside every shared workspace and repository, under these same rules.
 - Signed IPAs and evidence are not secrets; keep them separate from the signing inputs.
 
 No leaks to the conversation or the shell:
 - Ask for paths and nonsecret identifiers only. Never ask the user to paste a password, key, or `.p12` contents into the conversation; use a protected secret-file mechanism instead.
 - Read a password only through a file input such as `-passin file:<path>`. Never pass it through argv, an environment variable, `-passin env:`, a heredoc, or an interactive echo.
 - Never print, `cat`, `head`, encode, hash-dump, `diff`, or upload a secret file.
+- Never open a secret file with a file-reader, search, or upload tool, and never pass its path to such a tool.
+- Create the password file as the human: `install -m 600 /dev/null <path>`, then write one line with an editor or, in bash, `IFS= read -rs p && printf '%s\n' "$p" > <path>; unset p`. Never pass the password to `echo` or another argument.
 - Check secrets only through results that hold no secret: `test -r`, `test -s`, exit codes, file modes, and public-certificate fingerprints.
 - Disable shell tracing (`set -x`) and debug logging in any command that touches a secret. Send output that can contain key material to a private staging file or `/dev/null`, never to the conversation or a log.
 - Never send a secret to an external service or tool. Before each commit, inspect `git status` and run a secret scan when one is available.
@@ -367,12 +378,12 @@ Use an approved secret-capable signer or human-managed signing if the controlled
 This route temporarily extracts an unencrypted PEM private key; private file modes alone do not authorize decryption.
 Obtain explicit security approval for this exposure and the password-file method before starting.
 The user supplies the local password-file path through a protected mechanism, not its contents in chat.
-Require an owner-only `0600` password file and a fresh owner-only `0700` staging directory.
+Require a password file owned by the signer's user with no group or other access (`600` or `400`) and a fresh owner-only `0700` staging directory.
 Keep the original `.p12` and password file unchanged; disable secret stdout, shell tracing, and debug logs.
 Before extraction, arrange guarded cleanup for success, failure, and interruption in one approved controlled operation.
 The executor must own that lifetime, wait for signing to finish, and remove only the key/certificate files it created.
 If the execution mechanism cannot guarantee that cleanup, report a blocker rather than run independent decryption calls.
-Use the following guarded script only within that approved lifetime; it ran once end to end with zsign v1.1.3 and left no key material behind.
+Use the following guarded script only within that approved lifetime; it ran once end to end with zsign v1.1.3 and left no key material behind. That run covered extraction, key/certificate matching, signing, and cleanup. The guard checks were tested separately with non-secret files, not with a real identity.
 It is one controlled operation: the trap owns cleanup on success, failure, and interruption.
 Use it only when one reviewed entitlement set is appropriate for its signing targets.
 If a nested app or `.appex` needs distinct entitlements, block this route until a verified per-bundle entitlement-file mapping and signing plan establishes actual tool behavior; additional `-m` profiles alone do not resolve this gate.
@@ -381,6 +392,7 @@ If a nested app or `.appex` needs distinct entitlements, block this route until 
 #!/usr/bin/env bash
 set -euo pipefail
 set +x
+umask 077
 P12=/secure/ios/AppleDevelopment.p12
 PROFILE=/secure/ios/App.mobileprovision
 ENTS=/secure/ios/App.entitlements.plist
@@ -389,12 +401,19 @@ IN=/home/iosbuilder/ios-linux/output/ExampleApp-unsigned.ipa
 OUT=/home/iosbuilder/ios-linux/output/ExampleApp-signed.ipa
 WORK=/home/iosbuilder/ios-linux/output/sign-tmp
 ZSIGN=/home/iosbuilder/ios-linux/tools/zsign/zsign
+ROOT=${SIGN_STAGE_ROOT:?memory-backed staging root}
 
-test -s "$IN" && test ! -e "$OUT" && test ! -e "$WORK"
-test "$(stat -c '%a' "$PW")" = 600
+[ -s "$IN" ] || { echo "missing input IPA: $IN" >&2; exit 1; }
+[ ! -e "$OUT" ] || { echo "output already exists: $OUT" >&2; exit 1; }
+[ ! -e "$WORK" ] || { echo "work folder already exists: $WORK" >&2; exit 1; }
+[ -r "$PW" ] || { echo "password file is not readable: $PW" >&2; exit 1; }
+[ -z "$(find -L "$PW" -maxdepth 0 -perm /077)" ] || { echo "password file allows group or other access" >&2; exit 1; }
+[ "$(stat -L -c '%u' "$PW")" = "$(id -u)" ] || { echo "password file owner is not the current user" >&2; exit 1; }
+[ -z "$(find -L "$(dirname "$PW")" -maxdepth 0 -perm /022)" ] || { echo "password file directory is writable by group or others" >&2; exit 1; }
+[ "$(findmnt -n -o FSTYPE --target "$ROOT")" = tmpfs ] || { echo "staging root is not tmpfs: $ROOT" >&2; exit 1; }
 
-# Memory-backed tmpfs keeps the decrypted key off persistent storage where /tmp is tmpfs; check with findmnt.
-STAGE=$(mktemp -d /tmp/app-sign.XXXXXX)
+# Keep the decrypted key off persistent storage: use $XDG_RUNTIME_DIR or /dev/shm.
+STAGE=$(mktemp -d "$ROOT/app-sign.XXXXXX")
 cleanup() {
   rm -f -- "$STAGE/key.pem" "$STAGE/cert.pem"
   rmdir -- "$STAGE"
@@ -410,18 +429,21 @@ openssl pkcs12 -in "$P12" -passin "file:$PW" -clcerts -nokeys -out "$STAGE/cert.
 
 keypub=$(openssl pkey -in "$STAGE/key.pem" -pubout | sha256sum)
 certpub=$(openssl x509 -in "$STAGE/cert.pem" -pubkey -noout | sha256sum)
-test "$keypub" = "$certpub" && echo "key matches certificate"
+[ "$keypub" = "$certpub" ] || { echo "key/certificate mismatch" >&2; exit 1; }
+echo "key matches certificate"
 
 mkdir -m 700 "$WORK"
 "$ZSIGN" -k "$STAGE/key.pem" -c "$STAGE/cert.pem" -m "$PROFILE" -e "$ENTS" -t "$WORK" -o "$OUT" "$IN"
 echo "SIGN EXIT CODE: 0"
 ```
 
-- `mktemp -d` creates a fresh mode-`0700` directory; the script stops if the output or work folder already exists.
+Set `SIGN_STAGE_ROOT` to an approved memory-backed directory, such as `$XDG_RUNTIME_DIR` or `/dev/shm`. The script refuses a non-tmpfs root. Use disk staging only with explicit user approval, and then relax that check only for the approved run.
+
+- `mktemp -d` creates a fresh mode-`0700` directory; the script stops on a missing input, an existing output or work folder, an unreadable password file, a password file with any group or other access, a password-file owner other than the current user, a parent directory that group or others can write, or a staging root that is not tmpfs. The checks follow symlinks. A runtime secret mount such as `/run/secrets` passes when the runtime delivers the file with the signer's UID and no group or other access.
 - The password value stays out of argv; only its file path appears.
 - zsign `-t` keeps its unzipped intermediate in the scratch work folder, which the trap also removes.
 - Replace every path with setup's actual verified values; `ZSIGN` must be the verified binary.
-- After the run, require `SIGN EXIT CODE: 0`, no `/tmp/app-sign.*` directory, and no work folder. This proves removal of the files, not secure erasure.
+- After the run, require `SIGN EXIT CODE: 0`, the created staging directory (the `$STAGE` path) gone, and no work folder. This proves removal of the files, not secure erasure.
 - zsign printing `Can't find CodeSignature segment` then `Realloc CodeSignature space... Success!` is expected for an unsigned input.
 
 ### Signed-artifact evidence
@@ -453,7 +475,7 @@ for i in range(count):
         ents = plistlib.loads(blob[o + 8:o + length])
 print("EXACT MATCH" if ents == want else f"MISMATCH: {ents}")
 ```
-Run it with `uv run python -I`. Require `EXACT MATCH`; a fat binary needs its ARM64 slice offset first.
+Run it with setup's qualified Python 3 in isolated mode, for example `uv run python -I`. Require `EXACT MATCH`; a fat binary needs its ARM64 slice offset first.
 Check each intended value against the profile allowance with wildcard matching (`fnmatch.fnmatchcase`) for entries such as `TEAMID.*`.
 Require exact intended keys and values per bundle, as well as the matching profile's permitted subset; profile allowance alone is insufficient.
 Permit only documented tool-required transformations approved in the signing plan; block a pass if actual sets or per-bundle mapping cannot be checked.
@@ -474,7 +496,7 @@ Ask the human to connect the device by USB, unlock it, and complete Trust and pa
 On iOS 16+, enable Settings > Privacy & Security > Developer Mode, restart, and confirm Turn On.
 Developer Mode does not bypass signing or provisioning.
 Require approved host/container USB and usbmuxd visibility; return a pending connection state rather than guess root mounts or passthrough changes.
-In a container, use setup's relay route (`kmp-ios-setup-linux` reference, "Container device access") and check `USBMUXD_SOCKET_ADDRESS` and the socket from inside the running container first.
+In a container, use setup's recorded device route, relay preferred ([container device access](../../kmp-ios-setup-linux/references/debian12.md#container-device-access)), and check `USBMUXD_SOCKET_ADDRESS` and the socket from inside the running container first.
 
 The readiness examples use Debian 12 Bookworm `libimobiledevice-utils` `1.3.0-6` and the installation examples use `ideviceinstaller` `1.1.1-1`.
 Use setup's actual executable paths and installed help/version; adapt other versions through verified documentation.
@@ -527,7 +549,7 @@ Report `Installed` on this evidence.
 To reinstall, confirm that the source revision and signed-artifact hash still match the last build, then repeat the preinstall listing, install, and postinstall listing with the same IPA. Rebuild only after a revision change.
 
 The default `ideviceinstaller` route needs no Developer Services login.
-xtool 1.22.2 `install` reads `AuthToken.saved`; supplied signing inputs or a valid pre-signed IPA alone do not satisfy that installer.
+xtool 1.22.2 `install` reads its saved login token (a secret, see [secret placement and leak handling](#secret-placement-and-leak-handling)); supplied signing inputs or a valid pre-signed IPA alone do not satisfy that installer.
 Only with an already approved valid xtool auth session may the alternative be used:
 
 ```sh
@@ -540,7 +562,7 @@ Require the same installation-completion and postinstall bundle/version evidence
 ```
 Launch the actual installed bundle and require a successful debugserver launch response with PID/status where available, not CLI help or an operator conclusion.
 
-xtool launch does not read `AuthToken.saved`, but it requires compatible device debug services and the installed bundle.
+xtool launch does not read the saved login token, but it requires compatible device debug services and the installed bundle.
 On iOS 17 and later, debugserver access goes through Apple's CoreDevice developer tunnel; this workflow has no verified Linux route to it, and mounting a developer disk image changes the device and needs its own approval. A launch attempt on such a device is an experiment to propose, not a default step.
 When Linux launch is unavailable, ask the human to open the app from the home screen and to report what they observe. Record that report as a human observation, keep the outcome `Installed`, and list launch as pending.
 If enumeration needs xtool, its verified interface is `AppRun devices --usb --no-wait`; use the actual AppRun path and retain the explicit target selection.

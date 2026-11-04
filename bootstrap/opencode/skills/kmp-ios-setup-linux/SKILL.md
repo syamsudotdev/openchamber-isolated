@@ -52,6 +52,7 @@ Install only the approved dependencies and project-required JDK.
 Authenticate Swift before extraction and check xtool against its official release digest.
 Retain Swift's complete `usr` tree and select its real `usr/bin` tools.
 Prepare xtool, `zip`, and a Mach-O inspector; record absolute executable paths and versions.
+Prepare Python 3 for the build's helper scripts and pin Pillow for the icon step; record the interpreter path and the pinned Pillow version.
 Use process-local environment settings when required and record their resolved literal values.
 
 **Complete when:** authenticated tools execute with the required versions and runtime libraries.
@@ -91,9 +92,9 @@ Read [signing and device readiness](references/debian12.md#6-prepare-signing-and
 Inspect the selected signer's actual version, help, and credential-input capabilities before proposing a signing route.
 Qualify a developer certificate and private key (`.p12` or a supported compatible identity), a matching `.mobileprovision`, and an approved secure signing route.
 Record paths and safe identifiers only for inputs already provided. Keep private keys and passwords out of chat, command arguments, history, and logs.
-Apply the build skill's mandatory secret placement and leak handling rules (`kmp-ios-build-linux/references/build.md#secret-placement-and-leak-handling`). If a secret appears or may have appeared in the conversation, a command line, a log, or a commit, stop and warn the user without repeating the value.
+Apply the build skill's mandatory [secret placement and leak handling](../kmp-ios-build-linux/references/build.md#secret-placement-and-leak-handling) rules; that relative link needs the sibling `kmp-ios-build-linux` skill installed. If a leak happens as defined there, stop and warn the user without repeating the value.
 Treat private-key handling as explicit security scope; restrictive file permissions alone do not approve an unencrypted identity.
-For the protected-file OpenSSL route, qualify explicit approval, private temporary staging, and cleanup safeguards from the reference; leave decryption and signing commands to the build skill.
+For the protected-file OpenSSL route, qualify explicit approval, private temporary staging, and cleanup safeguards from the build reference's [approved OpenSSL 3 route](../kmp-ios-build-linux/references/build.md#approved-openssl-3-route); leave decryption and signing commands to the build skill.
 If credentials or a safe signing route are missing, record a signed-build blocker rather than unsigned success.
 Leave profile App ID, team, expiry, entitlements, target UDID coverage, and certificate/key matching to the build skill's validation gate.
 Record installer and launch tools, actual versions/help, target-UDID selection, and authentication prerequisites separately.
@@ -119,6 +120,7 @@ Include this handoff:
 - Host distribution/release, architecture, libc, and actual workspace/project directories.
 - Project JDK/Gradle/Kotlin/plugin versions; framework module/task/name/mode; host paths; deployment and resource requirements.
 - Absolute Swift, `swiftc`, xtool, `zip`, and inspector paths, versions, and trust-verification results.
+- Qualified Python 3 interpreter path and the pinned Pillow version for the build's helper scripts.
 - Actual SDK bundle, device SDK, and toolset paths; SDK metadata; auxiliary versions and provenance.
 - Qualified Linux port version/configuration and probe evidence, or the remaining blocker.
 - Required process-local `PATH`, `SWIFT_EXEC`, and XDG settings, if used, with resolved literal values.

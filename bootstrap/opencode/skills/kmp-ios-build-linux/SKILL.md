@@ -35,14 +35,14 @@ Request local paths and nonsecret identifiers for:
 - A matching `.mobileprovision` for each app and extension.
 - Intended per-bundle entitlement sources/files, or reviewed resolved entitlement files.
 - The actual bundle IDs, team ID, and intended device UDID or authorized target to enumerate.
-- A protected secret-input mechanism; request a password-file path, never password contents in chat.
+- A protected secret-input mechanism; request a password-file path, never password contents in chat. The human creates it with `install -m 600 /dev/null <path>`, then writes one line with an editor or, in bash, `IFS= read -rs p && printf '%s\n' "$p" > <path>; unset p`; never use `echo` with the password as an argument.
 
 A `.cer` without its private key is insufficient.
 Check each supplied profile's type at intake from its public metadata ([reference section 7](references/build.md#7-validate-signing-inputs)), before requesting the password.
 A USB install needs a development profile that lists the target UDID and allows `get-task-allow: true`, signed by an `Apple Development:` or legacy `iPhone Developer:` certificate.
 An App Store or TestFlight profile (no devices, `beta-reports-active`) with an `Apple Distribution:` certificate is the CI identity; return it with the development-profile steps.
 Place, read, and check every secret under the mandatory [secret placement and leak handling](references/build.md#secret-placement-and-leak-handling) rules; read the password only with `-passin file:`.
-If a secret appears or may have appeared in the conversation, a command line, a log, or a commit, stop and warn the user without repeating the value.
+If a leak happens as defined in [secret placement and leak handling](references/build.md#secret-placement-and-leak-handling), stop and warn the user without repeating the value.
 Missing signing inputs block the default goal; do not offer an automatic unsigned fallback or claim unsigned success.
 Record any explicit user decision to narrow the goal to unsigned output.
 Record signing approval and the separate approved key-handling method before signing.
@@ -64,6 +64,8 @@ Compare setup's handoff with the current host and project. Require:
 - Device connection visibility, installer path/version/help, pairing/auth readiness, and verifier capability limits.
 
 For a rebuild, export the new revision into a fresh gate directory with `git archive`.
+`git archive` omits submodules, Git LFS objects, and ignored build files such as `local.properties`; add each required one explicitly and list what you copied.
+For a non-Git project, copy a source snapshot and record its SHA256.
 Before the first task, repoint every scratch root, init script, output guard, and log path to that gate; prior gates are read-only evidence ([reference: rebuild a new revision](references/build.md#rebuild-a-new-revision)).
 Finish when all required values match current state; route readiness gaps to setup before affected actions.
 
@@ -117,10 +119,10 @@ Check bundle/App ID, team, target UDID, profile identity certificate, and permit
 Require approved resolved intended entitlements from actual app needs and required identity keys, with actual App ID/team values permitted by the matching profile.
 Review actual nested frameworks, dylibs, and `.appex` bundles and their signing order/profile needs.
 Pass the reviewed entitlement file through zsign `-e`; block the single-command route when nested bundles need distinct entitlements until per-bundle mapping and tool behavior are verified.
-xtool `--sign` uses xtool auth, not supplied `.p12` import; use setup's verified community zsign route for supplied inputs.
+xtool `--sign` uses xtool auth, not supplied `.p12` import; use setup's verified community zsign route for supplied inputs (verified for xtool 1.22.2 and zsign v1.1.3).
 zsign's password option exposes the password in argv; the documented protected route uses OpenSSL 3 password-file input and temporary PEM files.
 Require explicit security approval, fresh private staging, and one controlled extraction/signing operation with guarded cleanup on success, failure, and interruption.
-Use the reference's tested guarded script: staging on a memory-backed tmpfs where available, a trap-owned cleanup, and a key/certificate public-key match before signing.
+Use the reference's tested guarded script: staging in a memory-backed tmpfs when available (`$XDG_RUNTIME_DIR` or `/dev/shm`), a trap-owned cleanup, and checks that stop on failure before signing (input, output, work folder, password-file access/owner, password-file parent directory, tmpfs staging, and key/certificate public-key match).
 If that lifetime cannot be guaranteed, stop for an approved secret-capable signer or human-managed signing.
 Finish with signer completion, a nonempty signed IPA, and verified removal of only the created temporary key/certificate files.
 Record `SignedIPAProduced` only with the static evidence and limits in the next step.
@@ -144,7 +146,7 @@ Use [reference section 9](references/build.md#9-authorized-device-installation-a
 If authorization or device readiness is missing, report `DevicePending` with exact manual next steps and adapted commands.
 Have the human connect and unlock the device, complete Trust/passcode prompts, and enable Developer Mode on iOS 16+.
 Require approved USB/usbmuxd visibility; return a connection blocker instead of guessing privileged container changes.
-In a container, use setup's usbmuxd relay route and verify it from inside the running container before device steps.
+In a container, use setup's recorded device route, relay preferred, and verify it from inside the running container before device steps.
 Enumerate devices and use the actual authorized, profile-covered UDID; never select all devices or an ambiguous target.
 Read Developer Mode state from the device instead of asking the human to recheck it.
 Validate existing pairing; pair only when needed within the authorized workflow.

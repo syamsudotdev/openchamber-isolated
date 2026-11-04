@@ -11,6 +11,8 @@ Run commands individually and stop on errors. Obtain approval for the resolved c
 Select the JDK from project requirements. Install Android SDK components only when project configuration requires them.
 For other Debian releases, verify packages and binary compatibility first. For other distributions, research official distribution, Swift, and xtool documentation and adapt packages and paths before installation.
 
+Run `apt-get` as root or through the host's privilege tool, for example `sudo`.
+
 ```sh
 apt-get update
 ```
@@ -51,7 +53,7 @@ Create the resolved workspace directories.
 4. Extract with `dpkg-deb --extract` into the scratch root; run no maintainer scripts.
 5. Add wrapper scripts that set `LD_LIBRARY_PATH` to the extracted library directories and run the extracted binary with `"$@"`. Require no `not found` entries from `ldd` in that environment.
 
-Keep large downloads and caches on disk-backed storage; a memory-backed `/tmp` is for short-lived secrets, not toolchains.
+Keep large downloads and caches on disk-backed storage; a memory-backed location when available, such as `$XDG_RUNTIME_DIR` or `/dev/shm`, is for short-lived secrets, not toolchains.
 
 ## 2. Authenticate and extract Swift
 
@@ -192,6 +194,7 @@ env PATH=/home/iosbuilder/ios-linux/tools/swift/usr/bin:/home/iosbuilder/ios-lin
 
 Require xtool `1.22.2` with the complete Swift distribution selected first.
 Resolve and record `swiftc`, `zip`, and inspector paths and versions as well.
+Record a qualified Python 3 interpreter path and a pinned Pillow version for the build's helper scripts; install them only after approval.
 
 ## 4. Install the authorized SDK
 
@@ -249,12 +252,10 @@ Return to step 6 of `../SKILL.md` for the readiness gate. This section prepares 
 - Prefer a separate Linux signer for a user-provided developer identity and provisioning profile. Community zsign `v1.1.3` is not an Apple tool.
 - Inspect the [upstream release](https://github.com/zhlynn/zsign/releases/tag/v1.1.3) and its [release API record](https://api.github.com/repos/zhlynn/zsign/releases/tags/v1.1.3). Select an actual CPU-compatible asset, verify its release SHA-256 when supplied, and check libc requirements. Record any trust-verification limit; do not invent an asset name or digest.
 - Pin the selected version and record provenance. Verify the installed signer's actual version/help and identity formats before use. Debian's package baseline below does not install zsign.
-- zsign `v1.1.3` accepts a `.p12`, but its password option exposes the password in process arguments. No safe standard-input, environment, or password-file interface is verified for that version. Never request or render a password in chat or command arguments.
+- zsign `v1.1.3` accepts a `.p12`, but its password option exposes the password in process arguments. No safe standard-input, environment, or password-file interface is verified for that version.
 - zsign `v1.1.3` also supports an unencrypted PEM private key with `-k` and a PEM or DER certificate with `-c`; it checks the certificate/key match with `X509_check_private_key`.
 - A protected `.p12` can use OpenSSL 3 with an approved password-file input mechanism and explicitly approved temporary unencrypted PEM export. Credentials alone do not authorize this route. Keep exact export/signing commands in the build reference.
-- Qualify a fresh private staging directory with mode `0700` and temporary key/certificate files with mode `0600`. Require mode `0600` for the approved password file; do not change a user-owned file without approval.
-- Arrange cleanup before temporary key creation. Remove temporary key/certificate files on success, failure, or interruption and verify their absence. Preserve the original `.p12` and user password file. Ordinary deletion does not guarantee secure erasure on an SSD.
-- Keep secret values out of chat, command arguments, logs, and standard-output dumps. File permissions do not establish consent to private-key export.
+- Apply the build reference's [secret placement and leak handling](../../kmp-ios-build-linux/references/build.md#secret-placement-and-leak-handling) for placement, staging, cleanup, and leak rules. File permissions do not establish consent to private-key export.
 - If this route is not approved, select an approved signer with protected secret input or an approved human-managed signing step. Otherwise record a signed-build blocker. Record route evidence without secret values.
 - Record already-provided identity/profile paths and safe identifiers only. Leave certificate/key matching and profile App ID, team, expiry, entitlement, and target-device coverage validation to `kmp-ios-build-linux`.
 - xtool `1.22.2` `dev build --sign` uses xtool authentication with Apple Developer Services; it is not a `.p12` import route. Rights to download Xcode are separate from signing credentials.
@@ -272,7 +273,7 @@ Install this Debian baseline only after approval and selection of compatible pac
 - Record the installer interface that `--help` shows: Bookworm's `1.1.1-1` uses options (`--list-apps`, `--install`), and Trixie's `1.1.1+git20240518-1+b1` uses subcommands (`list`, `install`). The build reference owns version-specific installation and pairing commands; setup records capabilities only.
 - Trixie's set for a read-only container (all from `trixie/main`, amd64): `libimobiledevice-utils` `1.3.0+git20250228-2`, `ideviceinstaller`, `libimobiledevice-1.0-6`, `libimobiledevice-glue-1.0-0`, `libplist-2.0-4`, `libusbmuxd-2.0-7`, `libzip5`, and `libtatsu0`, which `libimobiledevice-utils` requires. Resolve the actual versions from the authenticated index.
 - Inspect the existing xtool executable's actual `install` and `launch` help. Record the required process-local Swift path from the toolchain handoff.
-- xtool `1.22.2` installation reads `AuthToken.saved`; a pre-signed IPA alone does not satisfy this installer's authentication requirement. Qualify that prerequisite or select an approved compatible installer.
+- xtool `1.22.2` installation reads its saved login token, an Apple ID credential and a secret, from `$HOME/.config/xtool/data/` (not `XDG_CONFIG_HOME`); keep that directory under the same placement rules. A pre-signed IPA alone does not satisfy this installer's authentication requirement. Qualify that prerequisite or select an approved compatible installer.
 - A pre-signed IPA installed with `ideviceinstaller` does not require a new Apple login or xtool authentication.
 - xtool launch does not require that authentication, but it requires installed-bundle lookup and debugserver access. Tool/help availability is capability evidence, not installation or launch evidence.
 
@@ -293,16 +294,16 @@ Install this Debian baseline only after approval and selection of compatible pac
 
 ### Container device access
 
-A container sees no device without host help: `/dev/bus/usb` and `/run/usbmuxd` are absent. Prefer this relay route to USB passthrough; the container needs no privileges.
+A container sees no device without host help: `/dev/bus/usb` and `/run/usbmuxd` are absent in a container by default, unless mounted or the container is privileged. Prefer this relay route to USB passthrough; the container needs no privileges.
 
 - The host runs `usbmuxd` and owns pairing records. libusbmuxd `2.1.0` and later read `USBMUXD_SOCKET_ADDRESS=UNIX:<path>`, and pairing records travel through `usbmuxd`, so the container needs no `/var/lib/lockdown`.
 - Bind-mount a directory, never `/run/usbmuxd` itself. The upstream udev rule runs `usbmuxd -x` when the last device detaches, so the socket is recreated on the next attach and a file bind mount keeps the stale inode.
-- Relay through a socket in a directory you control, and bind-mount the directory. Use mode `666` on the relay socket: rootless Docker maps the container user to a host subordinate ID. `/run/usbmuxd` is already mode `666`, so this adds no exposure.
+- Relay through a socket in a directory you control, and bind-mount the directory. Use mode `666` on the relay socket: a user-namespaced runtime (for example rootless Docker or Podman) maps the container user to a host subordinate ID. `/run/usbmuxd` is already mode `666`, so this adds no exposure.
 
-Give the human these host steps, adapted to the host's package manager:
+The host needs `socat`. Give the human these host steps, adapted to the host's package manager; the systemd user unit below is an example, and another service manager works.
 
 ```ini
-# ~/.config/systemd/user/usbmux-relay.service
+# Example systemd user unit: ~/.config/systemd/user/usbmux-relay.service
 [Unit]
 Description=Relay host usbmuxd into containers
 
@@ -318,6 +319,7 @@ WantedBy=default.target
 systemctl --user daemon-reload && systemctl --user enable --now usbmux-relay
 ```
 Start the relay; the host checks it with `USBMUXD_SOCKET_ADDRESS=UNIX:$HOME/.local/share/usbmux-relay/usbmuxd idevice_id -l`.
+The `%h/.local/share/usbmux-relay` path is an example; use a directory the host user owns. To keep the relay after logout, enable lingering: `loginctl enable-linger $USER`.
 
 Add to the container definition (Compose shown):
 
@@ -328,10 +330,10 @@ Add to the container definition (Compose shown):
       USBMUXD_SOCKET_ADDRESS: UNIX:/run/usbmux-relay/usbmuxd
 ```
 
-- The human must recreate the container with `docker compose up -d --force-recreate <service>`; `restart` and `docker start` keep the old mounts and environment. `docker compose config | grep usbmux` confirms the file is parsed, and `docker inspect` on the new container confirms the mount and variable.
+- The human must recreate the container with the runtime so new mounts and environment apply, for example `docker compose up -d --force-recreate <service>`; a plain restart keeps the old mounts and environment. With Docker, for example, `docker compose config | grep usbmux` confirms the file is parsed, and `docker inspect` on the new container confirms the mount and variable; use the runtime's equivalent commands otherwise.
 - Inside the container, check the variable and `ls -la /run/usbmux-relay/` (expect `srw-rw-rw- … usbmuxd`).
 - Before device tools exist, a read-only check can send one `ListDevices` plist request (usbmuxd protocol version 1, message type 8) to the socket and print each `SerialNumber`. With tools, use `idevice_id -l`.
-- Recreating the container restarts the agent session. Files in bind-mounted workspace paths persist; record which secret files live in persistent mounts.
+- If the agent runs inside this container, recreating it ends the agent session. Keep secrets in a dedicated owner-only mount outside every workspace and repository, per [secret placement and leak handling](../../kmp-ios-build-linux/references/build.md#secret-placement-and-leak-handling), and record that mount.
 
 Complete the step 7 handoff in `../SKILL.md`. Missing credentials or an unapproved secret route block the signed goal; an unsigned artifact is an explicit user-selected fallback only.
 
