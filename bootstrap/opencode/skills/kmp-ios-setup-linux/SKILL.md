@@ -19,6 +19,8 @@ Default to a signed IPA artifact goal. Use an unsigned fallback only when the us
 ## 1. Inspect the host and project
 
 Record the distribution, release, CPU architecture, libc, and package manager.
+Record whether you run in a container, whether its root filesystem is read-only, the current user, and which paths are writable and persistent.
+A read-only or non-root container selects the reference's local-extraction route instead of system package installation.
 Resolve the actual workspace, project, and tool directories. Example paths are not existing accounts.
 Inspect the Gradle wrapper, version catalog, plugin declarations, and native module configuration.
 Record required JDK, Gradle, Kotlin, Kotlin Gradle Plugin, and other compiler/plugin versions.
@@ -96,6 +98,7 @@ Leave profile App ID, team, expiry, entitlements, target UDID coverage, and cert
 Record installer and launch tools, actual versions/help, target-UDID selection, and authentication prerequisites separately.
 Record an approved independent signature verifier or **Unavailable**. Keep cryptographic verification limits separate from static checks and device acceptance.
 Obtain approval before root/package changes, USB passthrough, or device pairing under the host policy.
+In a container, prefer the reference's usbmuxd relay route over USB passthrough; it needs no privileges in the container. Verify it from inside the running container, because a restarted container keeps its old mounts.
 Record device visibility and pairing only when read-only enumeration is authorized; otherwise mark them unavailable.
 Ask the human to connect and unlock the target, accept Trust with the passcode, and enable Developer Mode when required.
 Give the concrete human steps in the reference and wait for confirmation. Developer Mode does not permit unsigned applications.

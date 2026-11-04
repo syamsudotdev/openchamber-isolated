@@ -41,6 +41,18 @@ mkdir -p /home/iosbuilder/ios-linux/tools /home/iosbuilder/ios-linux/downloads /
 
 Create the resolved workspace directories.
 
+### Read-only or non-root container
+
+`apt-get install` is unavailable when the root filesystem is read-only or you are not root. Extract authenticated packages into a writable, persistent scratch tree instead:
+
+1. Download the suite's `InRelease` and authenticate it with the verifier the release's apt uses: `gpgv --keyring /usr/share/keyrings/debian-archive-keyring.gpg` on Bookworm, and `sqv` on Trixie, where `gpgv` may be absent. Prove the check can fail by verifying a copy with one changed byte.
+2. Check the `Packages.xz` SHA256 and size against the authenticated `InRelease`, then each `.deb` SHA256 and size against its `Packages` record. Check `-updates` and `-security` for newer versions.
+3. Resolve every runtime library from the packages' `Depends` and fetch only the ones the image lacks (`ldconfig -p`).
+4. Extract with `dpkg-deb --extract` into the scratch root; run no maintainer scripts.
+5. Add wrapper scripts that set `LD_LIBRARY_PATH` to the extracted library directories and run the extracted binary with `"$@"`. Require no `not found` entries from `ldd` in that environment.
+
+Keep large downloads and caches on disk-backed storage; a memory-backed `/tmp` is for short-lived secrets, not toolchains.
+
 ## 2. Authenticate and extract Swift
 
 ```sh
@@ -257,7 +269,8 @@ Install this Debian baseline only after approval and selection of compatible pac
 
 - Record exact selected package versions and package provenance. For another distribution, derive equivalent official packages, binaries, and libc paths yourself. Use a source build only when host packages are incompatible and the user approves it.
 - Inspect actual version/help output for OpenSSL, device enumeration/pairing helpers, and `ideviceinstaller`. Record executable paths and the selected install/list/UDID syntax. Bookworm baselines are `ideviceinstaller` `1.1.1-1` and `libimobiledevice-utils` `1.3.0-6`; confirm installed versions instead of assuming them.
-- Use Bookworm's legacy installer interface, not current upstream's `install`/`list` subcommands. The build reference owns version-specific installation and pairing commands; setup records capabilities only.
+- Record the installer interface that `--help` shows: Bookworm's `1.1.1-1` uses options (`--list-apps`, `--install`), and Trixie's `1.1.1+git20240518-1+b1` uses subcommands (`list`, `install`). The build reference owns version-specific installation and pairing commands; setup records capabilities only.
+- Trixie's set for a read-only container (all from `trixie/main`, amd64): `libimobiledevice-utils` `1.3.0+git20250228-2`, `ideviceinstaller`, `libimobiledevice-1.0-6`, `libimobiledevice-glue-1.0-0`, `libplist-2.0-4`, `libusbmuxd-2.0-7`, `libzip5`, and `libtatsu0`, which `libimobiledevice-utils` requires. Resolve the actual versions from the authenticated index.
 - Inspect the existing xtool executable's actual `install` and `launch` help. Record the required process-local Swift path from the toolchain handoff.
 - xtool `1.22.2` installation reads `AuthToken.saved`; a pre-signed IPA alone does not satisfy this installer's authentication requirement. Qualify that prerequisite or select an approved compatible installer.
 - A pre-signed IPA installed with `ideviceinstaller` does not require a new Apple login or xtool authentication.
@@ -278,6 +291,48 @@ Install this Debian baseline only after approval and selection of compatible pac
 - When required, ask the human to open **Settings > Privacy & Security > Developer Mode**, enable it, restart, and confirm after restart. Wait for completion; do not bypass Trust or Developer Mode.
 - Record connection, pairing, profile/device validation, and Developer Mode separately from an actual installation event. Missing device access means **Install pending**, not failure to build a signed IPA.
 
+### Container device access
+
+A container sees no device without host help: `/dev/bus/usb` and `/run/usbmuxd` are absent. Prefer this relay route to USB passthrough; the container needs no privileges.
+
+- The host runs `usbmuxd` and owns pairing records. libusbmuxd `2.1.0` and later read `USBMUXD_SOCKET_ADDRESS=UNIX:<path>`, and pairing records travel through `usbmuxd`, so the container needs no `/var/lib/lockdown`.
+- Bind-mount a directory, never `/run/usbmuxd` itself. The upstream udev rule runs `usbmuxd -x` when the last device detaches, so the socket is recreated on the next attach and a file bind mount keeps the stale inode.
+- Relay through a socket in a directory you control, and bind-mount the directory. Use mode `666` on the relay socket: rootless Docker maps the container user to a host subordinate ID. `/run/usbmuxd` is already mode `666`, so this adds no exposure.
+
+Give the human these host steps, adapted to the host's package manager:
+
+```ini
+# ~/.config/systemd/user/usbmux-relay.service
+[Unit]
+Description=Relay host usbmuxd into containers
+
+[Service]
+ExecStart=/usr/bin/socat UNIX-LISTEN:%h/.local/share/usbmux-relay/usbmuxd,fork,mode=666,unlink-early UNIX-CONNECT:/run/usbmuxd
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```sh
+systemctl --user daemon-reload && systemctl --user enable --now usbmux-relay
+```
+Start the relay; the host checks it with `USBMUXD_SOCKET_ADDRESS=UNIX:$HOME/.local/share/usbmux-relay/usbmuxd idevice_id -l`.
+
+Add to the container definition (Compose shown):
+
+```yaml
+    volumes:
+      - ${HOME}/.local/share/usbmux-relay:/run/usbmux-relay
+    environment:
+      USBMUXD_SOCKET_ADDRESS: UNIX:/run/usbmux-relay/usbmuxd
+```
+
+- The human must recreate the container with `docker compose up -d --force-recreate <service>`; `restart` and `docker start` keep the old mounts and environment. `docker compose config | grep usbmux` confirms the file is parsed, and `docker inspect` on the new container confirms the mount and variable.
+- Inside the container, check the variable and `ls -la /run/usbmux-relay/` (expect `srw-rw-rw- … usbmuxd`).
+- Before device tools exist, a read-only check can send one `ListDevices` plist request (usbmuxd protocol version 1, message type 8) to the socket and print each `SerialNumber`. With tools, use `idevice_id -l`.
+- Recreating the container restarts the agent session. Files in bind-mounted workspace paths persist; record which secret files live in persistent mounts.
+
 Complete the step 7 handoff in `../SKILL.md`. Missing credentials or an unapproved secret route block the signed goal; an unsigned artifact is an explicit user-selected fallback only.
 
 ## Sources
@@ -290,4 +345,8 @@ Complete the step 7 handoff in `../SKILL.md`. Missing credentials or an unapprov
 - OpenAppleMacros: `https://github.com/xtool-org/OpenAppleMacros/releases/tag/v1.3.0`
 - Community zsign release: `https://github.com/zhlynn/zsign/releases/tag/v1.1.3`
 - Debian package versions: `https://packages.debian.org/bookworm/ideviceinstaller`
+- Trixie package versions: `https://packages.debian.org/trixie/ideviceinstaller`
+- libusbmuxd `USBMUXD_SOCKET_ADDRESS` (`UNIX:` form): `https://raw.githubusercontent.com/libimobiledevice/libusbmuxd/2.1.0/src/libusbmuxd.c`
+- usbmuxd socket mode and udev exit rule: `https://github.com/libimobiledevice/usbmuxd` (`src/main.c`, `udev/39-usbmuxd.rules.in`)
+- socat options (`unlink-early`, `mode`): `http://www.dest-unreach.org/socat/doc/socat.html`
 - Device tools upstream: `https://github.com/libimobiledevice/libimobiledevice` and `https://github.com/libimobiledevice/ideviceinstaller`

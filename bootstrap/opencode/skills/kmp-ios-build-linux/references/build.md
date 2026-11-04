@@ -42,6 +42,22 @@ Check that the output contains compiled implementations of the expected exported
 Run resource generation/sync tasks selected from this project's configuration.
 Finish with a real static device framework and its generated resources.
 
+### Rebuild a new revision
+
+Reuse the qualified port, toolchain, and caches; isolate everything the run writes.
+
+```sh
+git -C /home/iosbuilder/ios-linux/src/ExampleApp archive abc1234 | tar -x -C /home/iosbuilder/ios-linux/gate-next/app-src
+```
+Export the exact revision into a fresh, empty gate directory; compare the tracked-file count with `git ls-tree -r --name-only`.
+
+- Copy the prior gate's build scripts and repoint their project directory to the new export.
+- Copy any Gradle init script that records evidence or guards outputs, and repoint its probe root and guard paths. An init script left pointing at the prior gate appends to or overwrites that gate's logs, and its guard rejects new destinations.
+- Repoint resource destinations such as `BUILT_PRODUCTS_DIR` before the sync task runs.
+- Check every script with `grep` for the prior gate's path before the first task; only shared read-only inputs (port agent, toolchain, dependency caches) may keep it.
+- Dependencies added since the prior revision need the online compile step; the link and sync steps may stay offline.
+- Echo each task's exit code into its log (`LINK EXIT CODE: 0`); later steps can gate on it.
+
 ## 2. Stage the device-only XCFramework
 
 Inspect the actual framework before copying it.
@@ -151,6 +167,36 @@ Record a source-to-destination manifest and source SHA256 values for every requi
 Configure packaging from that manifest; do not invent a universal root-resource directory.
 Finish when every required source resource has a documented packaged destination and hash.
 
+### App icon without actool
+
+Xcode compiles `Assets.xcassets` with `actool` into `Assets.car` and adds `CFBundleIcons` with `CFBundleIconName`. Linux has no `actool`, so a Linux build has no icon and the home screen shows a blank tile.
+Use the pre-asset-catalog form instead: loose PNGs at the bundle root and `CFBundleIconFiles` in `Info.plist`.
+
+1. Read `AppIcon.appiconset/Contents.json` and take the largest image, usually a single 1024 × 1024 `universal` entry.
+2. Resize it to `AppIcon60x60@2x.png` (120 px) and `AppIcon60x60@3x.png` (180 px) for iPhone. Add `AppIcon76x76@2x.png` (152 px) and `AppIcon83.5x83.5@2x.png` (167 px) under `CFBundleIcons~ipad` when the app supports iPad (`UIDeviceFamily` contains `2`).
+3. Place the PNGs at the app bundle root next to the executable and add the key below. Stop if `Info.plist` already has icon keys; merge with them instead of replacing.
+4. Do this before signing: the icons must be in the bundle that the signer seals (`_CodeSignature/CodeResources` lists them).
+
+```python
+import plistlib, sys
+from PIL import Image
+src, app = sys.argv[1], sys.argv[2]                       # AppIcon-1024.png, Payload/ExampleApp.app
+im = Image.open(src).convert("RGB")
+for scale, px in (("2x", 120), ("3x", 180)):
+    im.resize((px, px), Image.LANCZOS).save(f"{app}/AppIcon60x60@{scale}.png", optimize=True)
+info = f"{app}/Info.plist"
+p = plistlib.load(open(info, "rb"))
+assert not any("Icon" in k for k in p), "merge with existing icon keys instead"
+p["CFBundleIcons"] = {"CFBundlePrimaryIcon": {"CFBundleIconFiles": ["AppIcon60x60"]}}
+plistlib.dump(p, open(info, "wb"), fmt=plistlib.FMT_XML)
+```
+Run it with `uv run --with pillow python -I`. Pillow is a build-time dependency of this step only.
+
+- Apply it to the extracted unsigned IPA, then repack with the setup-verified `zip` from inside the extraction directory (`zip -qr -X OUT.ipa Payload`). Require that the entry list differs from the original only by the icon files, and that the executable is byte-identical and keeps its executable mode.
+- zsign `-I icon.png` is an alternative during signing. Its v1.1.3 source (`ZBundle::ChangeAppIcon`) writes the given bytes unchanged as one `AppIcon60x60@2x.png` and adds the same keys. It does not resize, so it produces no `@3x` file.
+- Evidence: on 2026-11-04 an IPA built this way installed on iOS 27.0.1 (iPhone), and the human confirmed the icon shows on the home screen. Other iOS versions are unconfirmed; record the human's observation after each installation on a new version.
+- Other asset catalog content (colors, images used through `UIImage(named:)`) still needs `actool` and stays a known limit.
+
 ## 5. Build the unsigned Release IPA intermediate
 
 Use setup's literal environment only when it was selected for this installation.
@@ -210,6 +256,10 @@ Compare each resource's extracted SHA256 with the independently recorded source 
 Retain framework hashes and host link arguments.
 Use a link map or capable symbol inspection to identify the expected compiled Kotlin entry point and required native implementations inside the executable.
 A header, copied framework, or IPA hash alone does not prove Kotlin linkage.
+For a rebuild, choose a string the new revision added (for example a renamed resource accessor) and one it removed; require the first in the executable bytes and the second absent.
+Without a Mach-O inspector, parse the header directly: magic `0xfeedfacf`, CPU type `0x0100000c`, file type `2` (`MH_EXECUTE`), `LC_BUILD_VERSION` (`0x32`) platform `2` (iOS) and its `minos`, and `LC_MAIN` (`0x80000028`).
+Require `AppIcon60x60@2x.png`, `AppIcon60x60@3x.png`, and `CFBundleIcons` in the app (see "App icon without actool").
+Linux xtool packaging compiles no asset catalog and copies no privacy manifest unless configured; record other missing catalog content or `PrivacyInfo.xcprivacy` as a known limit of the artifact.
 Report incomplete validation if inspection tools or linkage evidence are unavailable.
 
 ```sh
@@ -233,6 +283,38 @@ zsign is a community tool, not an Apple tool.
 xtool 1.22.2 `dev build --sign` uses xtool authentication rather than supplied `.p12` import; preserve unsigned packaging above and sign its output separately.
 Use local protected paths such as `/secure/ios/AppleDevelopment.p12`, `/secure/ios/p12-password`, and `/secure/ios/App.mobileprovision`.
 A `.cer` without its private key cannot sign; missing inputs block the signed goal rather than trigger an automatic unsigned fallback.
+
+### Intake: profile type and container delivery
+
+Check the profile type first; it needs no password.
+
+```sh
+openssl cms -verify -noverify -inform DER -in /secure/ios/App.mobileprovision -out /secure/ios/staging-profile.plist
+```
+Decode the profile plist to a private scratch path, read it with a plist parser, and delete it afterwards.
+
+- Development, usable for USB install: `ProvisionedDevices` contains the target UDID, `Entitlements.get-task-allow` is `true`, and the `DeveloperCertificates` entry's subject starts with `Apple Development:` or the legacy `iPhone Developer:` (both are development identities).
+- App Store or TestFlight distribution, not installable over USB: no `ProvisionedDevices`, `beta-reports-active` present, `get-task-allow` `false`, subject `Apple Distribution:`. This is the CI identity; ask for a development set instead.
+- For a new development set, give the human the portal sequence: register the UDID under Devices, create an Apple Development certificate (a CSR from `openssl req -new -newkey rsa:2048 -nodes` works on Linux), convert the downloaded DER `.cer` with `openssl x509 -inform DER`, export the `.p12` with `openssl pkcs12 -export`, then create an iOS App Development profile with that certificate and device.
+
+Rootless Docker maps container users to host subordinate IDs, so a file created on the host appears owned by `root` inside the container and an owner-only file is unreadable there.
+Have the human stream each file into the container as the container user:
+
+```sh
+docker exec -u node -i ExampleContainer sh -c 'umask 077; mkdir -p /workspace/.ios-signing; cat > /workspace/.ios-signing/AppleDevelopment.p12' < AppleDevelopment.p12
+```
+Repeat for the profile; require mode `600` and the container user as owner.
+
+Take the `.p12` password through a protected secret-file mechanism (for example a secret-request card that writes an owner-only file), and read it only as `-passin file:<path>`.
+
+```sh
+openssl pkcs12 -in /secure/ios/AppleDevelopment.p12 -passin file:/secure/ios/p12-password -nokeys -clcerts | openssl x509 -noout -fingerprint -sha256
+```
+Compare this certificate-only fingerprint with the profile's `DeveloperCertificates` entry (`openssl x509 -inform DER -noout -fingerprint -sha256`); no private key is extracted.
+
+`openssl pkcs12 -info -noout` showing a `Shrouded Keybag` confirms that the `.p12` carries a private key.
+
+### Signing-input facts
 
 Before signing, validate these facts without dumping private keys, passwords, or profile contents to chat or external logs:
 - The certificate and private key match; zsign's `X509_check_private_key` support does not replace the preflight gate.
@@ -270,60 +352,57 @@ Keep the original `.p12` and password file unchanged; disable secret stdout, she
 Before extraction, arrange guarded cleanup for success, failure, and interruption in one approved controlled operation.
 The executor must own that lifetime, wait for signing to finish, and remove only the key/certificate files it created.
 If the execution mechanism cannot guarantee that cleanup, report a blocker rather than run independent decryption calls.
-The following blocks are operation fragments, not a complete cleanup implementation or permission to execute them now.
-
-```sh
-mkdir -m 700 /secure/ios/staging-run-001
-```
-Require successful creation of a fresh directory; stop if it exists, and never overwrite existing user data.
-
-```sh
-install -m 600 /dev/null /secure/ios/staging-run-001/key.pem
-```
-Create the empty private-key destination only inside this operation's newly created staging directory.
-
-```sh
-install -m 600 /dev/null /secure/ios/staging-run-001/cert.pem
-```
-Create the empty certificate destination with owner-only permissions before extraction.
-
-```sh
-stat -c '%a %U %n' /secure/ios/p12-password /secure/ios/staging-run-001 /secure/ios/staging-run-001/key.pem /secure/ios/staging-run-001/cert.pem
-```
-Require the intended owner, mode `700` for staging, and mode `600` for the password/key/certificate files before extraction and again for output files afterward.
-
-```sh
-openssl pkcs12 -in /secure/ios/AppleDevelopment.p12 -passin file:/secure/ios/p12-password -nocerts -noenc -out /secure/ios/staging-run-001/key.pem
-```
-Extract the private key within the approved controlled lifetime; the password value stays out of argv, but its file path does not.
-
-```sh
-openssl pkcs12 -in /secure/ios/AppleDevelopment.p12 -passin file:/secure/ios/p12-password -clcerts -nokeys -out /secure/ios/staging-run-001/cert.pem
-```
-Extract the identity certificate without printing its contents and confirm that it is the validated signing certificate.
-
-Use the following single-command route only when one reviewed entitlement set is appropriate for its signing targets.
+Use the following guarded script only within that approved lifetime; it ran once end to end with zsign v1.1.3 and left no key material behind.
+It is one controlled operation: the trap owns cleanup on success, failure, and interruption.
+Use it only when one reviewed entitlement set is appropriate for its signing targets.
 If a nested app or `.appex` needs distinct entitlements, block this route until a verified per-bundle entitlement-file mapping and signing plan establishes actual tool behavior; additional `-m` profiles alone do not resolve this gate.
 
-```sh
-zsign -k /secure/ios/staging-run-001/key.pem -c /secure/ios/staging-run-001/cert.pem -m /secure/ios/App.mobileprovision -e /secure/ios/App.entitlements.plist -o /home/iosbuilder/ios-linux/output/ExampleApp-signed.ipa /home/iosbuilder/ios-linux/output/ExampleApp-unsigned.ipa
-```
-Replace `zsign` with setup's actual verified binary path only after the entitlement and signing-plan gates pass.
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+set +x
+P12=/secure/ios/AppleDevelopment.p12
+PROFILE=/secure/ios/App.mobileprovision
+ENTS=/secure/ios/App.entitlements.plist
+PW=${1:?password file path}
+IN=/home/iosbuilder/ios-linux/output/ExampleApp-unsigned.ipa
+OUT=/home/iosbuilder/ios-linux/output/ExampleApp-signed.ipa
+WORK=/home/iosbuilder/ios-linux/output/sign-tmp
+ZSIGN=/home/iosbuilder/ios-linux/tools/zsign/zsign
 
-```sh
-rm -- /secure/ios/staging-run-001/key.pem /secure/ios/staging-run-001/cert.pem
-```
-The approved cleanup removes only these operation-created files after tools finish, including failure/interruption paths.
+test -s "$IN" && test ! -e "$OUT" && test ! -e "$WORK"
+test "$(stat -c '%a' "$PW")" = 600
 
-```sh
-test ! -e /secure/ios/staging-run-001/key.pem
-```
-Verify removal of the temporary private-key file without claiming secure SSD erasure.
+# Memory-backed tmpfs keeps the decrypted key off persistent storage where /tmp is tmpfs; check with findmnt.
+STAGE=$(mktemp -d /tmp/app-sign.XXXXXX)
+cleanup() {
+  rm -f -- "$STAGE/key.pem" "$STAGE/cert.pem"
+  rmdir -- "$STAGE"
+  rm -rf -- "$WORK"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM HUP
 
-```sh
-test ! -e /secure/ios/staging-run-001/cert.pem
+install -m 600 /dev/null "$STAGE/key.pem"
+install -m 600 /dev/null "$STAGE/cert.pem"
+openssl pkcs12 -in "$P12" -passin "file:$PW" -nocerts -noenc -out "$STAGE/key.pem" 2>/dev/null
+openssl pkcs12 -in "$P12" -passin "file:$PW" -clcerts -nokeys -out "$STAGE/cert.pem" 2>/dev/null
+
+keypub=$(openssl pkey -in "$STAGE/key.pem" -pubout | sha256sum)
+certpub=$(openssl x509 -in "$STAGE/cert.pem" -pubkey -noout | sha256sum)
+test "$keypub" = "$certpub" && echo "key matches certificate"
+
+mkdir -m 700 "$WORK"
+"$ZSIGN" -k "$STAGE/key.pem" -c "$STAGE/cert.pem" -m "$PROFILE" -e "$ENTS" -t "$WORK" -o "$OUT" "$IN"
+echo "SIGN EXIT CODE: 0"
 ```
-Verify removal of the temporary certificate file while preserving the original `.p12` and password file.
+
+- `mktemp -d` creates a fresh mode-`0700` directory; the script stops if the output or work folder already exists.
+- The password value stays out of argv; only its file path appears.
+- zsign `-t` keeps its unzipped intermediate in the scratch work folder, which the trap also removes.
+- Replace every path with setup's actual verified values; `ZSIGN` must be the verified binary.
+- After the run, require `SIGN EXIT CODE: 0`, no `/tmp/app-sign.*` directory, and no work folder. This proves removal of the files, not secure erasure.
+- zsign printing `Can't find CodeSignature segment` then `Realloc CodeSignature space... Success!` is expected for an unsigned input.
 
 ### Signed-artifact evidence
 
@@ -331,6 +410,31 @@ Require signer exit zero, its completion evidence, and a nonempty signed output 
 Repeat section 6's ZIP, plist, device-platform, resource, and linkage checks on that signed output in a fresh verification directory.
 Account for expected executable signature/profile/entitlement changes without excusing unrelated resource changes.
 Check embedded profiles against section 7 and independently read actual signed entitlements for the main app and every nested signed bundle.
+`cmp` each bundle's `embedded.mobileprovision` with the validated profile file.
+Without `codesign`, read the entitlements from the thin ARM64 executable's signature with a plist parser:
+
+```python
+import plistlib, struct, sys
+b = open(sys.argv[1], "rb").read()                        # Payload/ExampleApp.app/ExampleApp
+want = plistlib.load(open(sys.argv[2], "rb"))             # reviewed intended entitlements
+ncmds, off, sig = struct.unpack_from("<I", b, 16)[0], 32, None
+for _ in range(ncmds):
+    cmd, size = struct.unpack_from("<II", b, off)
+    if cmd == 0x1d:                                       # LC_CODE_SIGNATURE: dataoff, datasize
+        sig = struct.unpack_from("<II", b, off + 8)
+    off += size
+blob = b[sig[0]:sig[0] + sig[1]]
+magic, _, count = struct.unpack_from(">III", blob, 0)    # 0xfade0cc0 embedded-signature superblob
+ents = None
+for i in range(count):
+    _, o = struct.unpack_from(">II", blob, 12 + 8 * i)
+    m, length = struct.unpack_from(">II", blob, o)
+    if m == 0xfade7171:                                   # XML entitlements blob
+        ents = plistlib.loads(blob[o + 8:o + length])
+print("EXACT MATCH" if ents == want else f"MISMATCH: {ents}")
+```
+Run it with `uv run python -I`. Require `EXACT MATCH`; a fat binary needs its ARM64 slice offset first.
+Check each intended value against the profile allowance with wildcard matching (`fnmatch.fnmatchcase`) for entries such as `TEAMID.*`.
 Require exact intended keys and values per bundle, as well as the matching profile's permitted subset; profile allowance alone is insufficient.
 Permit only documented tool-required transformations approved in the signing plan; block a pass if actual sets or per-bundle mapping cannot be checked.
 Record signed path, size, SHA256, tool/signer versions, nonsecret identity/profile identifiers, and each check result.
@@ -350,9 +454,16 @@ Ask the human to connect the device by USB, unlock it, and complete Trust and pa
 On iOS 16+, enable Settings > Privacy & Security > Developer Mode, restart, and confirm Turn On.
 Developer Mode does not bypass signing or provisioning.
 Require approved host/container USB and usbmuxd visibility; return a pending connection state rather than guess root mounts or passthrough changes.
+In a container, use setup's relay route (`kmp-ios-setup-linux` reference, "Container device access") and check `USBMUXD_SOCKET_ADDRESS` and the socket from inside the running container first.
 
 The readiness examples use Debian 12 Bookworm `libimobiledevice-utils` `1.3.0-6` and the installation examples use `ideviceinstaller` `1.1.1-1`.
 Use setup's actual executable paths and installed help/version; adapt other versions through verified documentation.
+Select the installer syntax from `ideviceinstaller --help`, not from the distribution name:
+
+| Installed interface | List user apps | Install |
+| --- | --- | --- |
+| Option style (Bookworm `1.1.1-1`) | `--udid UDID --list-apps` | `--udid UDID --install IPA` |
+| Subcommands (Trixie `1.1.1+git20240518-1+b1`, help shows `OPTIONS COMMAND`) | `-u UDID list --user` | `-u UDID install IPA` |
 
 ```sh
 idevice_id --list
@@ -370,21 +481,31 @@ idevicepair --udid <UDID> pair
 Run only if pairing is needed within the authorized workflow, with human Trust interaction; skip when validation already succeeded.
 
 ```sh
+ideviceinfo --udid <UDID> -q com.apple.security.mac.amfi -k DeveloperModeStatus
+```
+Read Developer Mode state; `true` means enabled. The unknown-domain warning from this query is expected. Record `ProductVersion` with `-k ProductVersion` for the launch decision below.
+
+```sh
 ideviceinstaller --udid <UDID> --list-apps
 ```
 Record preinstall bundle/version state and this build's signed-artifact hash and intended version to distinguish an old installed copy.
+If the bundle ID is already installed from TestFlight or the App Store, the development install replaces it as an upgrade under the same team; report that and get confirmation before installing. The human restores the store build from TestFlight or the App Store.
 
 ```sh
 ideviceinstaller --udid <UDID> --install /home/iosbuilder/ios-linux/output/ExampleApp-signed.ipa
 ```
-Use Bookworm's option-style syntax and require exit zero plus the actual installation-completion response.
+Use the syntax that installed help confirms and require exit zero plus the actual installation-completion response (`Install: Complete`).
+Warnings about a missing `iTunesMetadata.plist` or `SC_Info/*.sinf` are expected for a non-store IPA.
+Device acceptance of the install is the first observable evidence that the signature and profile are valid for this device.
 
 ```sh
 ideviceinstaller --udid <UDID> --list-apps
 ```
 Require the intended bundle and version after this completed installation; an unchanged old listing alone is not a pass.
+Report `Installed` on this evidence.
 
-Newer upstream installers use subcommands such as `--udid UDID --notify-wait install IPA` and `list`; use them only if installed help confirms that interface.
+To reinstall, confirm that the source revision and signed-artifact hash still match the last build, then repeat the preinstall listing, install, and postinstall listing with the same IPA. Rebuild only after a revision change.
+
 The default `ideviceinstaller` route needs no Developer Services login.
 xtool 1.22.2 `install` reads `AuthToken.saved`; supplied signing inputs or a valid pre-signed IPA alone do not satisfy that installer.
 Only with an already approved valid xtool auth session may the alternative be used:
@@ -400,6 +521,8 @@ Require the same installation-completion and postinstall bundle/version evidence
 Launch the actual installed bundle and require a successful debugserver launch response with PID/status where available, not CLI help or an operator conclusion.
 
 xtool launch does not read `AuthToken.saved`, but it requires compatible device debug services and the installed bundle.
+On iOS 17 and later, debugserver access goes through Apple's CoreDevice developer tunnel; this workflow has no verified Linux route to it, and mounting a developer disk image changes the device and needs its own approval. A launch attempt on such a device is an experiment to propose, not a default step.
+When Linux launch is unavailable, ask the human to open the app from the home screen and to report what they observe. Record that report as a human observation, keep the outcome `Installed`, and list launch as pending.
 If enumeration needs xtool, its verified interface is `AppRun devices --usb --no-wait`; use the actual AppRun path and retain the explicit target selection.
 Unsupported device OS, DDI, or debugservice errors are target-compatibility blockers; research official sources within approved scope rather than claim universal modern-iOS support.
 Record target UDID, prior state, artifact identity, installation completion, postinstall bundle/version, launch response, and remaining limits.
@@ -416,6 +539,10 @@ Report signed-artifact state separately from `DevicePending` or a device blocker
 - Bookworm installer: https://manpages.debian.org/bookworm/ideviceinstaller/ideviceinstaller.1.en.html
 - Bookworm enumeration: https://manpages.debian.org/bookworm/libimobiledevice-utils/idevice_id.1.en.html
 - Bookworm pairing: https://manpages.debian.org/bookworm/libimobiledevice-utils/idevicepair.1.en.html
+- Trixie installer: https://manpages.debian.org/trixie/ideviceinstaller/ideviceinstaller.1.en.html
+- zsign icon replacement (`ChangeAppIcon`): https://raw.githubusercontent.com/zhlynn/zsign/v1.1.3/src/bundle.cpp
+- Bundle icon keys (`CFBundleIcons`, `CFBundleIconFiles`): https://developer.apple.com/documentation/bundleresources/information-property-list/cfbundleicons
+- Mach-O code signature blob magics: https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/cs_blobs.h
 - Apple development profiles: https://developer.apple.com/help/account/provisioning-profiles/create-a-development-provisioning-profile/
 - Apple profile structure: https://developer.apple.com/documentation/technotes/tn3125-inside-code-signing-provisioning-profiles
 - Apple Developer Mode: https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device
