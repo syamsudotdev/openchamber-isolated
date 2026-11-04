@@ -48,10 +48,6 @@ COPY install-android.sh /opt/bootstrap/install-android.sh
 RUN TARGETARCH="${TARGETARCH}" sh /opt/bootstrap/install-android.sh \
   && chown -R node:node /opt/android-sdk
 
-COPY install-opencode-claude.sh /opt/bootstrap/install-opencode-claude.sh
-COPY patches/opencode-claude/ /opt/bootstrap/patches/opencode-claude/
-RUN sh /opt/bootstrap/install-opencode-claude.sh /opt/opencode-claude
-
 RUN mkdir -p \
     /workspace \
     /opt/bootstrap \
@@ -88,6 +84,10 @@ ENV OPENCODE_DATA_DIR=/home/node/.local/share/opencode
 
 ENV OPENCHAMBER_DATA_DIR=/home/node/.config/openchamber
 ENV OPENCHAMBER_OPENCODE_HOSTNAME=127.0.0.1
+
+# The Claude Agent SDK labels requests sdk-ts when this is empty, and sdk-*
+# labels use the 5-hour limit faster (anthropics/claude-code#97074).
+ENV CLAUDE_CODE_ENTRYPOINT=opencode-claude
 
 EXPOSE 3000
 

@@ -57,8 +57,5 @@
   },
   "websearch": {
     "provider": "random"
-  },
-  "plugins": [
-    "/opt/opencode-claude"
-  ]
+  }
 }
