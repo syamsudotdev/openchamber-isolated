@@ -13,7 +13,7 @@ Provenance: the framework and unsigned-intermediate pipeline was adapted from an
 The fresh-Debian procedure was not clean-room tested; other-distribution adaptations are not automatically validated.
 The examples describe Debian paths, not universal Linux package or compiler compatibility.
 
-Examples use `/home/iosbuilder/ios-linux/src/ExampleApp`, module `shared`, framework `Shared`, host product `ExampleApp`, identifier `com.example.exampleapp`, and iOS `16.0`.
+Examples use `/home/iosbuilder/ios-linux/src/ExampleApp`, module `shared`, framework `Shared`, host product `ExampleApp`, identifier `com.example.exampleapp`, iOS `16.0`, and the device placeholder `<UDID>`.
 Replace these values consistently before use, including the example tool and SDK paths.
 Use the installed versions and trust evidence from setup, not an assumed JDK or SDK version.
 Each shell block contains one physical command; stop on failure.
@@ -199,7 +199,7 @@ Run it with setup's qualified Python 3 in isolated mode and a pinned Pillow, for
 
 - Apply it to the extracted unsigned IPA, then repack with the setup-verified `zip` from inside the extraction directory (`zip -qr -X OUT.ipa Payload`). Require that the entry list differs from the original only by the icon files, and that the executable is byte-identical and keeps its executable mode.
 - zsign `-I icon.png` is an alternative during signing. Its v1.1.3 source (`ZBundle::ChangeAppIcon`) writes the given bytes unchanged as one `AppIcon60x60@2x.png` and adds the same keys. It does not resize, so it produces no `@3x` file.
-- Evidence: on 2026-11-04 an IPA built this way installed on iOS 27.0.1 (iPhone), and the human confirmed the icon shows on the home screen. Other iOS versions are unconfirmed; record the human's observation after each installation on a new version.
+- Evidence: on 2026-11-04 an IPA built this way installed on an iPhone with iOS 27.0.1, and the human confirmed the icon shows on the home screen. Other iOS versions are unconfirmed; record the human's observation after each installation on a new version.
 - Other asset catalog content (colors, images used through `UIImage(named:)`) still needs `actool` and stays a known limit.
 
 ## 5. Build the unsigned Release IPA intermediate
