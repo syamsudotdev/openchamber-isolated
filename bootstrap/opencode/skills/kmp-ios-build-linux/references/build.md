@@ -9,7 +9,6 @@
 - Request the default signed goal's identity/private key, profiles, bundle/team IDs, and target through the main skill's step 0.
 - Obtain separate signing approval and explicit security approval for the selected key-handling method.
 
-Provenance: the framework and unsigned-intermediate pipeline was adapted from an internal guide; its source SHA256 is `<redacted>`. The guide is not required.
 The fresh-Debian procedure was not clean-room tested; other-distribution adaptations are not automatically validated.
 The examples describe Debian paths, not universal Linux package or compiler compatibility.
 
