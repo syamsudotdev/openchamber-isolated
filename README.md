@@ -197,6 +197,7 @@ The image defines these main paths:
 You can set these Compose variables in `.env`:
 
 - `OPENCHAMBER_UI_PASSWORD` (required)
+- `OPENCHAMBER_PORT` (default `3000`; set a different port for each instance on the same host, because Compose uses host networking)
 - `FIGMA_API_KEY` (optional; add it to `.env` for the Figma integration; defaults to an empty value)
 - `OPENCODE_CACHE`
 - `OPENCODE_WORKSPACE`

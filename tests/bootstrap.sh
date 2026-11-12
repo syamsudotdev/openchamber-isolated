@@ -37,6 +37,7 @@ export START_LOG="$temporary/start.log"
 export OPENCODE_CONFIG_DIR="$temporary/clean"
 export GRADLE_BOOTSTRAP_DIR="$temporary/gradle-source"
 export GRADLE_USER_HOME="$temporary/gradle-home"
+unset OPENCHAMBER_PORT
 
 start() {
   sh "$entrypoint"
@@ -49,6 +50,8 @@ expect_file "$OPENCODE_CONFIG_DIR/skills/example/SKILL.md" '# Bundled skill'
 expect_file "$OPENCODE_CONFIG_DIR/skills/example/assets/reference.txt" 'nested asset example'
 expect_file "$OPENCODE_CONFIG_DIR/skills/example/.reference" 'hidden asset example'
 expect_file "$START_LOG" "$(printf '%s\n' --foreground --host 0.0.0.0 --port 3000)"
+OPENCHAMBER_PORT=3001 start
+expect_file "$START_LOG" "$(printf '%s\n' --foreground --host 0.0.0.0 --port 3001)"
 [ -d "$OPENCODE_DATA_DIR" ] && [ -d "$XDG_CACHE_HOME/opencode" ] && [ -d "$OPENCHAMBER_DATA_DIR" ] || fail 'missing runtime directories'
 expect_file "$GRADLE_USER_HOME/gradle.properties" 'org.gradle.example=bundled'
 expect_file "$GRADLE_USER_HOME/init.d/example.gradle" '// bundled init script'

@@ -8,6 +8,7 @@ services:
     network_mode: host
     environment:
       OPENCHAMBER_UI_PASSWORD: ${OPENCHAMBER_UI_PASSWORD:?Set OPENCHAMBER_UI_PASSWORD in .env}
+      OPENCHAMBER_PORT: ${OPENCHAMBER_PORT:-3000}
       FIGMA_API_KEY: ${FIGMA_API_KEY:-}
       CLAUDE_CODE_ENTRYPOINT: opencode-claude
       NPM_CONFIG_CACHE: /home/node/.cache/npm

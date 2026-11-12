@@ -69,4 +69,4 @@ mkdir -p \
 exec openchamber \
   --foreground \
   --host 0.0.0.0 \
-  --port 3000
+  --port "${OPENCHAMBER_PORT:-3000}"
