@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Call graph review</title>
+<style>
+  :root{
+    color-scheme:light;
+    --gr-bg:#ffffff;--gr-fg:#1f2328;--gr-muted:#59636e;--gr-border:#d1d9e0;--gr-surface:#f6f8fa;--gr-card:#ffffff;
+    --gr-code-bg:#f6f8fa;--gr-code-fg:#1f2328;--gr-accent:#0969da;--gr-mark:#fff1a8;--gr-hit:#ddf4ff;
+    --gr-added:#1a7f37;--gr-modified:#9a6700;--gr-existing:#8c959f;
+    --gr-k1:#0969da;--gr-k2:#8250df;--gr-k3:#1b7c83;--gr-k4:#bc4c00;--gr-k5:#bf3989;--gr-k6:#4d7c0f;
+    --gr-e1:#8c959f;--gr-e2:#0969da;--gr-e3:#8250df;--gr-e4:#bc4c00;--gr-e5:#bf3989;--gr-e6:#1b7c83;
+    --gr-radius:6px;
+    --gr-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;
+    --gr-mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  html,body{margin:0;background:var(--gr-bg);color:var(--gr-fg);font-family:var(--gr-sans);font-size:14px;line-height:1.45}
+  .wrap{display:flex;flex-direction:column;gap:.75rem;padding:12px;background:var(--gr-bg);color:var(--gr-fg)}
+  .top{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between}
+  .muted{color:var(--gr-muted)}
+  .hint{font-size:.8em}
+  .seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--gr-border);border-radius:var(--gr-radius);overflow:hidden;background:var(--gr-surface)}
+  .seg button{font:inherit;font-size:.85em;border:0;background:transparent;color:var(--gr-fg);padding:.3em .8em;cursor:pointer}
+  .seg button[aria-pressed="true"]{background:var(--gr-card);box-shadow:inset 0 -2px 0 var(--gr-accent);font-weight:600}
+  .btn{font:inherit;font-size:.85em;border:1px solid var(--gr-border);background:var(--gr-card);color:var(--gr-fg);border-radius:var(--gr-radius);padding:.2em .7em;cursor:pointer}
+  .btn:hover,.seg button:hover{background:var(--gr-surface)}
+  .seg button:focus-visible,.btn:focus-visible{outline:2px solid var(--gr-accent);outline-offset:1px}
+  .bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;min-height:2rem;font-size:.85em}
+  .bar[hidden]{display:none}
+  .caption{font-size:.85em}
+  .legend{display:flex;flex-wrap:wrap;gap:.35rem .9rem;font-size:.8em;color:var(--gr-fg)}
+  .legend span{display:inline-flex;align-items:center;gap:.35em}
+  .sw{width:.9em;height:.9em;border-radius:3px;border:2px solid var(--c);display:inline-block;box-sizing:border-box}
+  .dot{width:.65em;height:.65em;border-radius:50%;background:var(--c);display:inline-block}
+  .ln{width:1.4em;height:0;border-top:2px solid var(--c);display:inline-block}
+  .ln.d{border-top-style:dashed}
+  .canvas{overflow-x:auto;border:1px solid var(--gr-border);border-radius:var(--gr-radius);background:var(--gr-bg)}
+  #g{display:block;width:100%;min-width:620px;height:auto;font-family:var(--gr-sans)}
+  .node rect{fill:var(--gr-card);stroke-width:1.6}
+  .node text{fill:var(--gr-fg);font-size:11px;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
+  .node{cursor:pointer;transition:opacity .15s;outline:none}
+  .node:hover rect,.node:focus-visible rect{stroke-width:3}
+  .node.sel rect{stroke-width:3}
+  .node.dim{opacity:.3}
+  .node.dim text{font-size:9px}
+  .edge{fill:none;stroke-width:1.3;opacity:.55;transition:opacity .15s}
+  .edge.dash{stroke-dasharray:4 3}
+  .edge.dim{opacity:.07}
+  .edge.on{opacity:1;stroke-width:2.2}
+  .rowlbl{fill:var(--gr-muted);font-size:9.5px;letter-spacing:.04em;text-transform:uppercase}
+  .fo{position:relative;box-sizing:border-box;width:100%;height:100%;padding:6px 8px;overflow:auto;font-family:var(--gr-sans);font-size:11px;line-height:1.35;color:var(--gr-fg);cursor:auto}
+  .fh{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;cursor:pointer}
+  .fh b{font-size:12px}
+  .role{font-size:9.5px;padding:0 5px;border-radius:999px;border:1px solid var(--c);color:var(--gr-fg)}
+  .ff,.sh{font-family:var(--gr-mono);font-size:9.5px;color:var(--gr-muted);word-break:break-all}
+  .ff{margin:2px 0 3px}
+  .sh{margin:5px 0 2px}
+  .nt{font-size:10px;color:var(--gr-muted);margin:0 0 3px}
+  .fo pre{margin:0;font-family:var(--gr-mono);font-size:10px;line-height:13px;background:var(--gr-code-bg);color:var(--gr-code-fg);border:1px solid var(--gr-border);border-radius:4px;padding:3px 5px;overflow-x:auto}
+  .fo pre .l{display:block;white-space:pre}
+  .fo pre .n{display:inline-block;min-width:2.4em;padding-right:.6em;text-align:right;color:var(--gr-muted);user-select:none}
+  .fo pre .l.hit{background:var(--gr-hit);box-shadow:inset 2px 0 0 var(--gr-accent)}
+  .ph{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:2px 6px}
+  .tg{font:inherit;font-family:var(--gr-sans);font-size:9.5px;line-height:1.5;padding:0 7px;border:1px solid var(--gr-border);border-radius:999px;background:var(--gr-card);color:var(--gr-fg);cursor:pointer;white-space:nowrap}
+  .tg:hover{border-color:var(--gr-accent)}
+  .tg[aria-pressed="true"],.btn[aria-pressed="true"]{background:var(--gr-accent);border-color:var(--gr-accent);color:#ffffff}
+  .tg:focus-visible{outline:2px solid var(--gr-accent);outline-offset:1px}
+  mark{background:var(--gr-mark);color:inherit;border-radius:2px;padding:0 1px}
+  .none{font-size:10px;color:var(--gr-muted)}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="seg" id="tabs"></div>
+    <div class="muted hint" id="hint">Select a node to show its code with its callers and callees</div>
+  </div>
+  <div class="caption muted" id="caption"></div>
+  <div class="bar" id="bar" hidden>
+    <span id="status"></span>
+    <button type="button" class="btn" id="whole" aria-pressed="false">Whole functions</button>
+    <button type="button" class="btn" id="clear">Clear selection</button>
+  </div>
+  <div class="canvas"><svg id="g" xmlns="http://www.w3.org/2000/svg"></svg></div>
+  <div class="legend" id="legend"></div>
+</div>
+<script>
+const DATA=/*GRAPH_DATA*/null;
+const svgNS='http://www.w3.org/2000/svg', XHTML='http://www.w3.org/1999/xhtml';
+const $=id=>document.getElementById(id);
+const el=(t,a={},p)=>{const e=document.createElementNS(svgNS,t);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e};
+const h=(t,cls,txt,p)=>{const e=document.createElementNS(XHTML,t);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;if(p)p.appendChild(e);return e};
+// SVG presentation attributes do not resolve var(), so colors go through the style property.
+const paint=(e,props)=>{for(const k in props)e.style.setProperty(k,props[k]);return e};
+const N=DATA.nodes, TABS=DATA.tabs, KINDS=DATA.kinds, ETYPES=DATA.edgeTypes;
+const SNIP={decl:{},call:{}};
+// The source lines are gzip-compressed and base64-encoded. Each snippet part is
+// [fileIndex, first, last, more, bodyFirst, bodyLast, bodyKind]; bodyFirst 0 means no body.
+async function unpack(){
+  const bin=Uint8Array.from(atob(DATA.code),c=>c.charCodeAt(0));
+  const store=JSON.parse(await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
+  const L=DATA.files.map(()=>new Map());
+  for(const f in store) for(const [st,ts] of store[f]) ts.forEach((t,j)=>L[f].set(st+j,t));
+  const run=(f,a,b)=>{
+    const raw=Array.from({length:b-a+1},(_,j)=>L[f].get(a+j));
+    const pad=Math.min(...raw.filter(t=>t.trim()).map(t=>t.match(/^\s*/)[0].length));
+    return raw.map((t,j)=>({n:a+j,t:t.slice(Number.isFinite(pad)?pad:0)}));
+  };
+  const part=([f,a,b,more,ba,bb,bk])=>({key:f+':'+a+'-'+b,file:DATA.files[f],first:a,last:b,lines:a===b?''+a:a+'-'+b,more:!!more,code:run(f,a,b),
+    body:ba?{first:ba,last:bb,lines:ba+'-'+bb,kind:bk==='d'?'declaration':'function',code:run(f,ba,bb)}:null});
+  for(const k in DATA.snippets.decl) SNIP.decl[k]=DATA.snippets.decl[k].map(part);
+  for(const k in DATA.snippets.call) SNIP.call[k]=DATA.snippets.call[k].map(part);
+}
+const KC={}, EC={};
+Object.keys(KINDS).forEach((k,i)=>{KC[k]=k==='other'?'var(--gr-existing)':`var(--gr-k${i%6+1})`;});
+Object.keys(ETYPES).forEach((k,i)=>{EC[k]=`var(--gr-e${i%6+1})`;});
+const SC={A:'var(--gr-added)',M:'var(--gr-modified)',U:'var(--gr-existing)'};
+const SN={A:'added',M:'modified',U:'existing'};
+const label=id=>N[id].label.replace(/\n(?=[(\/])/g,' ').replace(/\n/g,'');
+const esc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+const DECL_RE=/\b(?:class|interface|object|fun|func|function|def|fn|struct|enum|trait|protocol|record|type|impl|module)\s+(?:\([^)]*\)\s*)?(?:[\w.]+\.)?([A-Za-z_$][\w$]*)/g;
+// Names to mark for a node: its declared names plus the symbols the spec lists.
+function tokens(id){
+  const out=new Set(N[id].symbols||[]), d=SNIP.decl[id];
+  if(d) for(const s of d) for(const m of s.code.map(l=>l.t).join('\n').matchAll(DECL_RE)) out.add(m[1]);
+  return [...out];
+}
+// Marks declared names and the identifiers named in the edge note. A lowercase note word is marked only where it is called.
+function marker(names,edge){
+  const ids=new Set(names), calls=new Set();
+  if(edge&&edge.note) for(const w of edge.note.match(/[A-Za-z_$][\w$]*/g)||[]) (/[A-Z]/.test(w)?ids:calls).add(w);
+  const parts=[];
+  if(ids.size) parts.push('\\b(?:'+[...ids].map(esc).join('|')+')\\b');
+  if(calls.size) parts.push('\\b(?:'+[...calls].map(esc).join('|')+')(?=\\()');
+  return parts.length?new RegExp(parts.join('|'),'g'):null;
+}
+// Global "Whole functions" state, with per-part overrides keyed by snippet part.
+let whole=false;
+const flip=new Map();
+const isOpen=s=>!!s.body&&(flip.has(s.key)?flip.get(s.key):whole);
+function pre(s,re,parent){
+  const p=h('pre',null,null,parent), open=isOpen(s);
+  for(const l of open?s.body.code:s.code){
+    const hit=open&&l.n>=s.first&&l.n<=s.last;
+    const row=h('span',hit?'l hit':'l',null,p); h('span','n',String(l.n),row);
+    if(!re){row.appendChild(document.createTextNode(l.t));continue;}
+    let last=0; for(const m of l.t.matchAll(re)){if(!m[0])continue;row.appendChild(document.createTextNode(l.t.slice(last,m.index)));h('mark',null,m[0],row);last=m.index+m[0].length;}
+    row.appendChild(document.createTextNode(l.t.slice(last)));
+  }
+  if(s.more&&!open){const row=h('span','l',null,p);h('span','n','',row);h('span',null,'… statement continues',row);}
+}
+const W=720, LX=78, TOP=26, BASE=36, COMPACT=60, HGAP=10, MAXH=300, MAXH_OPEN=520;
+let tab, sel=null;
+const linkedEdges=()=>sel?tab.edges.filter(e=>e.from===sel||e.to===sel):[];
+const edgeTitle=e=>ETYPES[e.type].label+(e.note?' · '+e.note:'');
+// The code a highlighted node shows: the selected node shows its declaration and its outgoing call sites,
+// a caller shows its call sites into the selected node, and a callee shows its declaration.
+function blocks(id){
+  const out=[], decl=SNIP.decl[id]||[], own=tokens(id);
+  if(id===sel){
+    out.push({title:'Declaration',parts:decl,re:marker(own),empty:!decl.length});
+    for(const e of tab.edges.filter(e=>e.from===sel)) out.push({title:'→ '+label(e.to)+' · '+edgeTitle(e),parts:SNIP.call[e.sites]||[],re:marker(tokens(e.to),e),sites:true});
+    return out;
+  }
+  for(const e of tab.edges.filter(e=>e.from===id&&e.to===sel)) out.push({title:'calls '+label(sel)+' · '+edgeTitle(e),parts:SNIP.call[e.sites]||[],re:marker(tokens(sel),e),sites:true});
+  for(const e of tab.edges.filter(e=>e.from===sel&&e.to===id)) out.push({title:'called by '+label(sel)+' · '+edgeTitle(e),parts:decl,re:marker(own),empty:!decl.length});
+  return out;
+}
+const shownLines=s=>isOpen(s)?s.body.code.length:s.code.length+(s.more?1:0);
+const estimate=(id,bs)=>40+(N[id].note?14*Math.ceil(N[id].note.length/60):0)+bs.reduce((t,b)=>t+16+(b.empty?14:0)+b.parts.reduce((u,s)=>u+16+13*shownLines(s)+8,0),0);
+function roleOf(id){
+  if(id===sel) return 'selected';
+  const caller=tab.edges.some(e=>e.from===id&&e.to===sel), callee=tab.edges.some(e=>e.from===sel&&e.to===id);
+  return caller&&callee?'caller and callee':caller?'caller':callee?'callee':null;
+}
+function layout(){
+  const linked=new Set([sel,...linkedEdges().flatMap(e=>[e.from,e.to])].filter(Boolean));
+  const pos={}, rows=[]; let y=TOP; const vgap=tab.rows.length>6?38:48;
+  const height=id=>{const bs=blocks(id), max=bs.some(b=>b.parts.some(isOpen))?MAXH_OPEN:MAXH; return Math.max(BASE,Math.min(max,estimate(id,bs)));};
+  tab.rows.forEach((row,r)=>{
+    const hi=row.filter(id=>linked.has(id)), xs=[], ws=[];
+    if(!hi.length){const slot=(W-LX)/row.length, w=Math.min(134,slot-12); row.forEach((id,c)=>{ws.push(w);xs.push(LX+slot*(c+.5)-w/2);});}
+    else{const hw=(W-LX-4-HGAP*(row.length-1)-COMPACT*(row.length-hi.length))/hi.length; let x=LX; row.forEach(id=>{const w=linked.has(id)?hw:COMPACT; xs.push(x); ws.push(w); x+=w+HGAP;});}
+    const hs=row.map(id=>linked.has(id)?height(id):BASE);
+    row.forEach((id,c)=>{pos[id]={x:xs[c],y,w:ws[c],h:hs[c],r,cx:xs[c]+ws[c]/2,on:linked.has(id)};});
+    rows.push(y); y+=Math.max(...hs)+vgap;
+  });
+  return {pos,rows,height:y-vgap+16,linked};
+}
+function pick(id){sel=sel===id?null:id;render();}
+function partHead(s,b,box){
+  const head=h('div','ph',null,box), open=isOpen(s);
+  h('span','sh',s.file.split('/').pop()+':'+(open?s.body.lines:s.lines),head);
+  if(!s.body) return;
+  const n=s.body.code.length, tg=h('button','tg',`Whole ${s.body.kind} · ${n} line${n===1?'':'s'}`,head);
+  tg.type='button'; tg.setAttribute('aria-pressed',String(open));
+  tg.title=open?'Show only the snippet lines':`Show lines ${s.body.lines}`;
+  tg.addEventListener('click',ev=>{ev.stopPropagation();flip.set(s.key,!open);render();});
+}
+function codeNode(id,p,grp){
+  const n=N[id], fo=el('foreignObject',{x:p.x+1.5,y:p.y+1.5,width:p.w-3,height:p.h-3},grp);
+  const box=h('div','fo',null,fo); box.addEventListener('click',ev=>ev.stopPropagation());
+  const head=h('div','fh',null,box); head.title=id===sel?'Clear selection':'Select this node';
+  head.addEventListener('click',ev=>{ev.stopPropagation();pick(id);});
+  h('i','dot',null,head).style.setProperty('--c',SC[n.status]);
+  h('b',null,label(id),head);
+  h('span','role',roleOf(id),head).style.setProperty('--c',KC[n.kind]);
+  h('span','none',KINDS[n.kind],head);
+  const d=SNIP.decl[id]; h('div','ff',d?d[0].file+':'+d[0].lines:'No declaration in this graph.',box);
+  if(n.note) h('div','nt',n.note,box);
+  for(const b of blocks(id)){
+    h('div','sh',b.title,box);
+    if(b.empty) h('div','none','No declaration in this graph.',box);
+    for(const s of b.parts){ if(b.parts.length>1||b.sites||s.body) partHead(s,b,box); pre(s,b.re,box); }
+  }
+}
+// An opened body scrolls its box to the first snippet line.
+function scrollToHits(){
+  if(typeof requestAnimationFrame!=='function') return;
+  requestAnimationFrame(()=>{for(const box of document.querySelectorAll('.fo')){const hit=box.querySelector('.hit'); if(hit&&box.scrollHeight>box.clientHeight) box.scrollTop=Math.max(0,hit.offsetTop-40);}});
+}
+function render(){
+  const g=$('g'); g.innerHTML='';
+  const {pos,rows,height,linked}=layout();
+  g.setAttribute('viewBox',`0 0 ${W} ${height}`);
+  const defs=el('defs',{},g);
+  for(const k in EC){const m=el('marker',{id:'m'+k,viewBox:'0 0 8 8',refX:7,refY:4,markerWidth:7,markerHeight:7,orient:'auto-start-reverse'},defs);paint(el('path',{d:'M0,0 L8,4 L0,8 z'},m),{fill:EC[k]});}
+  rows.forEach((y,r)=>{el('text',{x:4,y:y+BASE/2+3,class:'rowlbl'},g).textContent=(tab.rowLabels||[])[r]||'';});
+  const eg=el('g',{},g), ng=el('g',{},g);
+  for(const e of tab.edges){
+    const a=pos[e.from], b=pos[e.to]; let d;
+    if(a.r===b.r){const dir=b.cx>a.cx?1:-1, x1=a.cx+dir*Math.min(a.w/4,30), x2=b.cx-dir*Math.min(b.w/4,30); d=`M${x1},${a.y} C${x1},${a.y-26} ${x2},${b.y-26} ${x2},${b.y-1}`;}
+    else if(b.r>a.r){const y1=a.y+a.h, y2=b.y-1, my=(y1+y2)/2; d=`M${a.cx},${y1} C${a.cx},${my} ${b.cx},${my} ${b.cx},${y2}`;}
+    else{const y1=a.y, y2=b.y+b.h+1, my=(y1+y2)/2; d=`M${a.cx},${y1} C${a.cx},${my} ${b.cx},${my} ${b.cx},${y2}`;}
+    const on=sel&&(e.from===sel||e.to===sel);
+    const cls='edge'+(ETYPES[e.type].dashed?' dash':'')+(sel?(on?' on':' dim'):'');
+    const path=paint(el('path',{d,class:cls,'marker-end':`url(#m${e.type})`},eg),{stroke:EC[e.type]});
+    el('title',{},path).textContent=`${label(e.from)} → ${label(e.to)}: ${edgeTitle(e)}`;
+  }
+  for(const id in pos){
+    const p=pos[id], n=N[id];
+    const grp=el('g',{class:'node'+(sel?(id===sel?' sel':p.on?' on':' dim'):''),tabindex:0,role:'button','data-id':id},ng);
+    el('title',{},grp).textContent=label(id)+(n.note?'\n'+n.note:'');
+    paint(el('rect',{x:p.x,y:p.y,width:p.w,height:p.h,rx:7},grp),{stroke:KC[n.kind]});
+    grp.addEventListener('click',()=>pick(id));
+    grp.addEventListener('keydown',ev=>{if(ev.target!==grp)return;if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();pick(id);}});
+    if(p.on){codeNode(id,p,grp);continue;}
+    paint(el('circle',{cx:p.x+p.w-6,cy:p.y+6,r:3.2},grp),{fill:SC[n.status]});
+    const lines=p.w<80?[label(id).length>9?label(id).slice(0,8)+'…':label(id)]:n.label.split('\n');
+    lines.forEach((s,j)=>{el('text',{x:p.cx,y:p.y+BASE/2+(j-(lines.length-1)/2)*12.5},grp).textContent=s;});
+  }
+  const ins=tab.edges.filter(e=>e.to===sel).length, outs=tab.edges.filter(e=>e.from===sel).length;
+  $('bar').hidden=!sel;
+  $('whole').setAttribute('aria-pressed',String(whole));
+  $('status').textContent=sel?`${label(sel)} · ${ins} caller${ins===1?'':'s'} · ${outs} callee${outs===1?'':'s'}`:'';
+  scrollToHits();
+  return {pos,linked};
+}
+function draw(i){
+  tab=TABS[i]; sel=null;
+  $('caption').textContent=tab.caption||'';
+  document.querySelectorAll('#tabs button').forEach((b,j)=>b.setAttribute('aria-pressed',String(j===i)));
+  return render();
+}
+function legend(){
+  const lg=$('legend'), item=(cls,color,text)=>{const s=h('span',null,null,lg);h('i',cls,null,s).style.setProperty('--c',color);s.appendChild(document.createTextNode(text));};
+  for(const k in KINDS) item('sw',KC[k],KINDS[k]);
+  for(const k in SN) item('dot',SC[k],SN[k]);
+  for(const k in ETYPES) item('ln'+(ETYPES[k].dashed?' d':''),EC[k],ETYPES[k].label);
+}
+document.title=DATA.title;
+if(DATA.base) $('hint').textContent=`Diff against ${DATA.base}. Select a node to show its code with its callers and callees`;
+$('clear').onclick=()=>{sel=null;render();};
+$('whole').onclick=()=>{whole=!whole;flip.clear();render();};
+const READY=unpack().then(()=>{
+  TABS.forEach((t,i)=>{const b=h('button',null,t.name,$('tabs'));b.type='button';b.onclick=()=>draw(i);});
+  legend();
+  draw(0);
+}).catch(err=>{$('caption').textContent='This browser cannot unpack the embedded code ('+err.message+'). Open the page in a current browser.';});
+</script>
+</body></html>
