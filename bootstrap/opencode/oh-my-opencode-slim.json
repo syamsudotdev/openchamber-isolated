@@ -39,7 +39,7 @@
         ]
       },
       "explorer": {
-        "model": "claude-agent/haiku",
+        "model": "opencode-go/deepseek-v4.1-flash",
         "variant": "low",
         "skills": [],
         "mcps": []
@@ -54,7 +54,7 @@
         "mcps": []
       },
       "fixer": {
-        "model": "claude-agent/sonnet",
+        "model": "opencode-go/deepseek-v4.1-flash",
         "variant": "high",
         "skills": [
           "compose-screens-footguns",
