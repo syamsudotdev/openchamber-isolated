@@ -51,7 +51,9 @@
       }
     }
   },
-  "warming": true,
+  "warming": {
+    "duration": "30 minutes"
+  },
   "experimental": {
     "background_compaction": true
   },
