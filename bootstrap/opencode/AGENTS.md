@@ -15,6 +15,12 @@ Use ASD-STE100 Simplified Technical English (STE).
 * Use imperative verbs for procedures.
 * Preserve code, paths, commands, identifiers, and URLs exactly.
 
+Load the `i-have-adhd` skill before the first response to the user in each session.
+
+Apply the `i-have-adhd` format to each response to the user.
+
+Do not load the `i-have-adhd` skill for a response to a parent agent.
+
 ## 1. Instruction Priority
 
 Follow system instructions first.
@@ -25,7 +31,7 @@ Follow explicit user instructions next.
 
 Follow this file after higher-priority instructions.
 
-Follow `roles/orchestrator.md` when it does not conflict with this file.
+Follow `/home/node/.config/opencode/roles/orchestrator.md` when it does not conflict with this file.
 
 Follow the more specific instruction when two instructions at the same priority conflict.
 
@@ -42,8 +48,6 @@ Do not ask for clarification when the available information is sufficient.
 Do not ask a question only because more detail is possible.
 
 State a reasonable assumption when it does not block safe and correct work.
-
-State each assumption that can affect the result.
 
 Ask one focused question when missing information blocks a correct plan.
 
@@ -104,15 +108,7 @@ Do not infer behavior from source structure when you can verify the behavior.
 
 Inspect the existing implementation before you propose a new implementation.
 
-Check for an existing asset before you create a new asset.
-
-Check for an existing function before you create a new function.
-
-Check for an existing component before you create a new component.
-
-Check for an existing dependency before you add a new dependency.
-
-Check for an existing configuration before you add a new configuration.
+Check for an existing asset, function, component, dependency, or configuration before you add a new one.
 
 If two sources disagree, identify the disagreement.
 
@@ -181,10 +177,6 @@ Inspect the necessary context before a change.
 
 Use read-only inspection to define the scope.
 
-State assumptions that affect correctness.
-
-Ask one clarifying question only when an unresolved assumption blocks the plan.
-
 Include a simpler valid path when one exists.
 
 Do not include a proposed change in the plan until the available evidence supports that change.
@@ -217,27 +209,17 @@ Wait for explicit user approval of the revised plan.
 
 Match the existing code style.
 
-Simplify code when the change does not alter required behavior.
-
-Remove duplication when the change does not alter required behavior.
+Simplify code and remove duplication when the change does not alter required behavior.
 
 Remove code that cannot run when it is inside the approved scope.
 
-Remove a one-use abstraction when its removal makes the code simpler.
+Remove a one-use abstraction when its removal makes the code simpler and does not change required behavior.
 
-Do not remove the abstraction if its removal changes required behavior.
-
-Report unrelated code that cannot run.
-
-Report unrelated code that is not used.
+Report unrelated code that cannot run or is not used.
 
 Do not remove unrelated code unless the user requests its removal.
 
-Remove unused files that your change creates.
-
-Remove unused references that your change creates.
-
-Remove unused declarations that your change creates.
+Remove unused files, references, and declarations that your change creates.
 
 Inspect the diff before the final response.
 
@@ -307,9 +289,9 @@ Make each `★ Insight` specific to the codebase.
 
 ## 8. Role Boundary
 
-Follow `roles/orchestrator.md` for orchestration ownership, delegation, lifecycle, status, retries, escalation, reconciliation, review, and acceptance.
+Follow `/home/node/.config/opencode/roles/orchestrator.md` for orchestration ownership, delegation, lifecycle, status, retries, escalation, reconciliation, review, and acceptance.
 
-Do not let `roles/orchestrator.md` override the model policy in this file.
+Read `/home/node/.config/opencode/roles/orchestrator.md` before the first delegation in each session.
 
 At delegation, verify that the child can access required artifacts.
 
@@ -322,6 +304,14 @@ Report active commands and who owns them at handoff.
 Consume an existing result before you launch duplicate work.
 
 Continue independent approved work while dependencies run.
+
+In a Fixer or Designer brief for a codemod or a bulk command, give the target set or the search that defines it.
+
+In the same brief, give the expected match count, the preview method, the duration estimate, and the acceptance check.
+
+When the target set is unknown, ask Explorer for the target set before you delegate the change.
+
+Require Fixer and Designer to report the preview count and the final `git diff --stat`.
 
 ## 9. Tools and Command-Line Interface
 
@@ -353,13 +343,87 @@ Run Python only through `uv run`.
 
 Use commands such as `uv run script.py` or `uv run pytest`.
 
-Do not use bare `python`.
-
 Do not use bare `pip`.
 
 Do not read, decode, inspect, upload, or process image binary data unless the user explicitly requests image inspection or image processing.
 
 Treat each image file as an opaque file until the user gives that request.
+
+### Command Preconditions
+
+Before a chain of commands, confirm with `command -v` that each program exists.
+
+Before a chain of commands, confirm that each input path exists.
+
+Before a Git command, confirm that the working directory is the intended Git repository or worktree.
+
+Join dependent commands with `&&`.
+
+Do not join dependent commands with `;`, because the chain continues after a failure and returns only the exit code of the last command.
+
+Use `;` only between independent diagnostic commands.
+
+Start each multi-line shell script with `set -euo pipefail`.
+
+### Codemods
+
+A codemod is a scripted change that applies the same edit at many locations.
+
+Use a codemod when one change applies to more than five locations or to more than two files.
+
+Use the edit tool for fewer locations.
+
+Select the codemod tool in this order:
+
+1. Use `ast_grep_search` and `ast_grep_replace` for a structural change.
+2. Use a codemod tool that the project already configures, such as OpenRewrite `rewriteDryRun`.
+3. Use a `uv run` Python script for a text change that ast-grep cannot express.
+
+Use `sed -i` or `perl -pi` only for a literal change in a target set that you listed first.
+
+Apply this procedure to each codemod:
+
+1. List the target set with a read-only search, and record the match count.
+2. Examine a sample of matches for wrong matches and missed variants.
+3. Preview the change with `ast_grep_replace` and `dryRun: true`, with `rewriteDryRun`, or with a dry-run diff from the script.
+4. Make the script stop with an error when the actual match count differs from the expected count.
+5. Apply the change.
+6. Run `git diff --stat`, and confirm that only the target files changed.
+7. Run the assigned check.
+
+### Long-Running Commands
+
+Before a command, estimate its duration from a previous run, a pilot run, or the target count.
+
+When the estimate is more than approximately one minute, set the timeout above the estimate.
+
+Make the command print a progress line to stdout at a fixed interval.
+
+Include the processed count, the total, the changed count, and the error count in each progress line.
+
+Use `print(..., flush=True)` or `uv run python -u` for Python progress output.
+
+Use `--console=plain` for Gradle progress output.
+
+Do not pipe a long command into `tail` or `head`, because the pipe hides all output until the command ends.
+
+Write the output of a long command to a scratchpad log with `tee`.
+
+Before a long codemod, run it on one to three files, measure the time for each file, and examine the diff.
+
+Make a codemod resumable: skip files that are already changed, process files in a fixed order, and record completed files in a checkpoint file.
+
+Split a codemod that exceeds the timeout into batches that each finish inside the timeout.
+
+Define the stop conditions before you start: no new progress line in two intervals, an error count above zero, or an elapsed time above twice the estimate.
+
+When a stop condition occurs, stop the process and its child processes.
+
+Then read the log, identify the cause, change the command, and resume from the checkpoint.
+
+Do not rerun a command with only a larger timeout unless its progress lines show normal progress.
+
+Use a background command only for a job that you cannot split into batches, such as a Gradle build.
 
 ## 10. Git and Pull Request Workflow
 
@@ -369,11 +433,7 @@ Do not add persistent project documents to `.gitignore`.
 
 Do not add temporary Markdown planning files to merge commits unless the user requests them.
 
-Remove references to imports that no longer exist when you resolve merge conflicts.
-
-Remove references to classes that no longer exist when you resolve merge conflicts.
-
-Do not keep references to removed code.
+When you resolve merge conflicts, remove references to imports, classes, and other code that no longer exist.
 
 Add comments to the code file when an instruction requires inline documentation.
 
@@ -385,13 +445,9 @@ Record `HEAD` before modifications.
 
 Stash uncommitted changes when the approved change can overwrite them.
 
-Do not stash changes before approval.
-
 Stop after the same failure occurs three times.
 
 Stop after a dependency operation fails twice.
-
-Present options after the second dependency failure.
 
 Make no more than five attempts to correct lint errors.
 
@@ -405,21 +461,27 @@ Count unsuccessful attempts, not expected temporary-fault test failures.
 
 When you stop, report the blocker and relevant evidence.
 
+Write the stop report in SBAR format: Situation, Background, Assessment, and Recommendation.
+
+Put the recommendation in the first line as the exact reply that the user must give.
+
+Give the time cost of each option in the first line.
+
+Put the current step and the total step count in the second line.
+
+Write the Situation, the Background, and the Assessment in one line each.
+
 Do not force-install dependencies.
 
 Pin dependencies to exact versions.
 
 ## 12. Session and Model Economy
 
-Configured model settings are authoritative for every agent.
-
 Do not override the model for a run unless the user explicitly authorizes that override.
 
 Do not override thinking settings for a run unless the user explicitly authorizes that override.
 
-Do not change agent configuration unless the user explicitly authorizes that change.
-
-Do not change model configuration unless the user explicitly authorizes that change.
+Do not change agent configuration or model configuration unless the user explicitly authorizes that change.
 
 A parent session is the main orchestration session.
 
@@ -429,13 +491,9 @@ For an implementation task, complete one shippable milestone in each parent sess
 
 Use a fresh child for unrelated work.
 
-Resume the same Reviewer for a focused follow-up.
+Resume a compatible retained Reviewer or Oracle for a focused follow-up.
 
-Resume the same Oracle for a focused follow-up.
-
-Do not launch a new Reviewer when a compatible retained Reviewer exists.
-
-Do not launch a new Oracle when a compatible retained Oracle exists.
+Do not launch a new Reviewer or Oracle when a compatible retained one exists.
 
 Run targeted checks in a child when the delegated task requires them.
 

@@ -24,6 +24,16 @@ Give each subagent the requirements, scope, evidence, constraints, and validatio
 
 Do not send unrelated parent context.
 
+In each Explorer, Oracle, or Reviewer brief that asks for an audit, findings, or recommendations, add a decided list.
+
+Write the decided list as one line: `Decided, do not propose again: <item>: <decision>; ...`.
+
+Include each user decision and each accepted or rejected recommendation that is in the brief's scope.
+
+Write `Decided, do not propose again: none` when no decision applies.
+
+If the subagent proposes a decided item again, treat the proposal as rejected and do not ask the user again.
+
 Keep one subagent context for related retries while that context remains useful.
 
 Use a fresh subagent context only as specified in the retry process.
@@ -32,11 +42,15 @@ Use a fresh subagent context only as specified in the retry process.
 
 Run no more than one active subagent of each agent type at a time.
 
-An agent type is one specialist name, such as `designer`, `fixer`, `explorer`, `librarian`, `oracle`, or `reviewer`.
+This limit is a user override. It narrows each instruction from the plugin or the harness to dispatch parallel lanes.
+
+Run parallel lanes only across different agent types.
+
+An agent type is one specialist name, such as `designer`, `fixer`, `explorer`, `oracle`, or `reviewer`.
 
 Subagents of different agent types can run at the same time.
 
-Before you launch a subagent, check the Background Job Board for a running subagent of the same agent type.
+Before you launch a subagent, use `task_status` to check for a running subagent of the same agent type.
 
 If a subagent of that agent type is running, queue the new work.
 
@@ -97,9 +111,9 @@ Include the unresolved blockers and the relevant recent transcript in the steeri
 
 Do not repeat the same instruction without new evidence or targeted steering.
 
-Use Librarian when official documentation can confirm or reject an assumption.
+Use Explorer when official documentation can confirm or reject an assumption.
 
-Use Librarian to test a suspected wrong assumption against official documentation.
+Use Explorer to test a suspected wrong assumption against official documentation.
 
 Before attempt 4, send the blockers and the relevant recent transcript to Oracle.
 

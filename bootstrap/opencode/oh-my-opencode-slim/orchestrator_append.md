@@ -1,0 +1,1 @@
+Run no more than one active subagent of each agent type at a time. This user override replaces each instruction to dispatch parallel lanes of one agent type, such as parallel Fixer lanes. Run parallel lanes only across different agent types.
