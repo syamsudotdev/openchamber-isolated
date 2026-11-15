@@ -337,32 +337,34 @@ The root filesystem remains read-only. Docker named volumes make `/home/node` an
 
 ## Update Versions
 
-The `Update application versions` workflow checks npm `latest` for exact stable `@opencode/cli` and `@openchamber/web` versions. It rejects downgrades, invalid metadata, and inconsistent pins before it changes files. It updates only the Dockerfile pins and their README references. It does not update other tools.
-
-The schedule runs daily at 20:00 in `America/Los_Angeles`. The script uses the local calendar date and runs updates every second day, with 2026-10-21 as an active date. This calendar calculation preserves parity across month, year, and daylight-saving changes. A manual `workflow_dispatch` run bypasses the date gate. Manual runs must select `main`; other branches cannot run the update job. Checkout always selects `main`.
-
-GitHub runs scheduled workflows only from the default branch. Keep `main` as the default branch. Scheduled runs can be delayed or dropped under load. A delayed run uses its actual local execution date; a missed date is not replayed. GitHub can disable scheduled workflows in public repositories after 60 days without repository activity. Check the Actions page if updates stop. Concurrency prevents overlapping runs; GitHub can replace an older pending run with the latest pending run.
-
-When versions change, the workflow runs all five test commands, builds a `linux/amd64` image, and checks the installed package versions in a disposable container without starting services. It commits only `Dockerfile` and `README.md`, then pushes to `main` with `GITHUB_TOKEN`. Repository rules must permit this push. A no-op creates no commit. Validation, test, build, or branch-movement failures prevent the push. A concurrent change after the final fetch causes a normal non-fast-forward push rejection; the workflow never forces a push.
-
-The commit message records only changed packages, their old and new versions, and official release links. Missing releases or minimal release notes produce a comparison link marked `Release notes unavailable`. The script treats notes with fewer than 80 non-whitespace characters, or placeholder notes, as minimal. It does not summarize breaking changes. GitHub API errors other than a missing release stop the update. The message file stays in runner temporary storage, not in Git.
-
-For a manual pin change, keep both README references consistent with each Dockerfile argument:
-
-Change these build arguments in `Dockerfile`:
-
-```dockerfile
-ARG OPENCODE_VERSION=2.3.0
-ARG OPENCHAMBER_VERSION=2.7.2
-```
-
-Then rebuild the image:
+Each build installs the latest release of each tool. A cached Docker layer keeps the versions of an earlier build, and the `node:26-trixie-slim` tag can move to a newer base. Rebuild without the cache and with the newest base:
 
 ```bash
-docker compose build --no-cache
+docker compose build --pull --no-cache
 ```
 
-These package pins do not make the whole image reproducible. The `node:26-trixie-slim` tag and apt repositories can change. Package dependencies and runtime downloads can also change. Builds require network access. The host network configuration still controls connectivity and exposure; container restrictions do not make network services private.
+To select an exact version of one tool, pass its build argument, for example `docker compose build --no-cache --build-arg UV_VERSION=0.13.8`. Each argument defaults to `latest`:
+
+| Build argument | Tool |
+| --- | --- |
+| `OPENCODE_VERSION` | `@opencode/cli` |
+| `OPENCHAMBER_VERSION` | `@openchamber/web` |
+| `PLAYWRIGHT_VERSION` | Playwright and its Chromium build |
+| `QUINT_VERSION` | `@informalsystems/quint` |
+| `UV_VERSION` | `uv` and `uvx` |
+| `RTK_VERSION` | RTK OSS |
+| `FFF_VERSION` | `fff-mcp` |
+| `GH_VERSION` | GitHub CLI `gh` |
+| `GITLEAKS_VERSION` | `gitleaks` |
+| `TEMURIN_VERSION` | Eclipse Temurin 25 JDK, such as `25.0.5+8` |
+
+The Android command-line tools and platform-tools always use the latest stable entries of Google's SDK repository. `platforms;android-36` and `build-tools;37.0.0` stay fixed, because they are a project SDK choice. The build records every resolved version in `/usr/local/share/image-versions.txt`.
+
+Builds are not reproducible: two builds on different days can install different versions. A new release can also break the build or the runtime. Builds require network access. The host network configuration still controls connectivity and exposure; container restrictions do not make network services private.
+
+The `Build image check` workflow runs daily at 20:00 in `America/Los_Angeles` and on a manual `workflow_dispatch` run from `main`. It runs the shell and plugin tests, builds a `linux/amd64` image with `--pull --no-cache`, writes `image-versions.txt` to the job summary, and runs `tests/android-runtime.sh` against the image. It does not commit or push. A failed run shows that the latest releases break the build or the runtime checks.
+
+GitHub runs scheduled workflows only from the default branch. Keep `main` as the default branch. Scheduled runs can be delayed or dropped under load. GitHub can disable scheduled workflows in public repositories after 60 days without repository activity. Check the Actions page if the runs stop.
 
 ## Troubleshooting
 
@@ -405,7 +407,6 @@ sh tests/bootstrap.sh
 sh tests/install-tools.sh
 sh tests/android-install.sh
 node --test tests/rtk-plugin.mjs
-node --test tests/update-versions.mjs
 ```
 
 The tests use temporary configuration, data, and cache directories. They use a stub `openchamber` command and fixed example contents. They do not validate Docker builds or the running applications.
