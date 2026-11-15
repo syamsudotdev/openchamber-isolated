@@ -3,6 +3,7 @@ FROM node:26-trixie-slim
 ARG OPENCODE_VERSION=2.3.0
 ARG OPENCHAMBER_VERSION=2.7.2
 ARG PLAYWRIGHT_VERSION=1.64.1
+ARG QUINT_VERSION=0.33.1
 ARG TARGETARCH=amd64
 
 RUN test "${TARGETARCH}" = amd64 \
@@ -29,6 +30,7 @@ RUN node -e 'const [major, minor] = process.versions.node.split(".").map(Number)
     "@opencode/cli@${OPENCODE_VERSION}" \
     "@openchamber/web@${OPENCHAMBER_VERSION}" \
     "playwright@${PLAYWRIGHT_VERSION}" \
+    "@informalsystems/quint@${QUINT_VERSION}" \
   && npm cache clean --force
 
 # Install only the Chromium system libraries. Projects download their own browser builds.

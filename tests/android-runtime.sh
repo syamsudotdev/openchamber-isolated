@@ -43,6 +43,7 @@ android -V
 avdmanager list target -c
 adb version
 aapt2 version
+test "$(quint --version)" = 0.33.1
 test -f "$ANDROID_HOME/platforms/android-36/android.jar"
 test -d "$ANDROID_HOME/build-tools/37.0.0"
 android --sdk="$ANDROID_HOME" sdk list
