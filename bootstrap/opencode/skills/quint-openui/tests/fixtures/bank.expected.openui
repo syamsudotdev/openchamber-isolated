@@ -1,0 +1,8 @@
+root = Stack([status, flow, states, defs])
+status = Callout("`no_negatives` fails at state 2.", "error", "Invariant violated")
+flow = Steps([{title: "State 0: init", markdown: "Initial state."}, {title: "State 1: deposit(account: bob, amount: 75)", markdown: "- `balances[bob]`: 0 → 75"}, {title: "State 2: withdraw(account: charlie, amount: 45)", markdown: "- `balances[charlie]`: 0 → -45"}], "column")
+states = Table(["State", "Action", "balances[alice]", "balances[bob]", "balances[charlie]"], [[0, "init", 0, 0, 0], [1, "deposit(account: bob, amount: 75)", 0, 75, 0], [2, "withdraw(account: charlie, amount: 45)", 0, 75, -45]])
+defs = Tabs([tab_vars, tab_actions, tab_values])
+tab_vars = Tab("State variables", [Card("`balances`", [Badge("var", "info"), Text("A state variable to store the balance of each account")])])
+tab_actions = Tab("Actions", [Card("`deposit`", [Badge("action", "info"), Text("Increment balance of account by amount"), Text("Reads: `balances`. Updates: `balances`.")]), Card("`withdraw`", [Badge("action", "info"), Text("Decrement balance of account by amount"), Text("Reads: `balances`. Updates: `balances`.")]), Card("`init`", [Badge("action", "info"), Text("At the initial state, all balances are zero"), Text("Updates: `balances`.")]), Card("`step`", [Badge("action", "info"), Text("No `///` comment."), Text("Reads: `balances`. Updates: `balances`.")])])
+tab_values = Tab("Values", [Card("`ADDRESSES`", [Badge("pureval", "info"), Text("No `///` comment.")]), Card("`no_negatives`", [Badge("val", "info"), Badge("violated", "error"), Text("An invariant stating that all accounts should have a non-negative balance"), Text("Reads: `balances`.")])])
