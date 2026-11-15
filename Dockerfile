@@ -1,9 +1,10 @@
 FROM node:26-trixie-slim
 
-ARG OPENCODE_VERSION=2.3.0
-ARG OPENCHAMBER_VERSION=2.7.2
-ARG PLAYWRIGHT_VERSION=1.64.1
-ARG QUINT_VERSION=0.33.1
+# Each tool installs its latest release unless a build argument selects an exact version.
+ARG OPENCODE_VERSION=latest
+ARG OPENCHAMBER_VERSION=latest
+ARG PLAYWRIGHT_VERSION=latest
+ARG QUINT_VERSION=latest
 ARG TARGETARCH=amd64
 
 RUN test "${TARGETARCH}" = amd64 \
@@ -31,11 +32,16 @@ RUN node -e 'const [major, minor] = process.versions.node.split(".").map(Number)
     "@openchamber/web@${OPENCHAMBER_VERSION}" \
     "playwright@${PLAYWRIGHT_VERSION}" \
     "@informalsystems/quint@${QUINT_VERSION}" \
-  && npm cache clean --force
+  && npm cache clean --force \
+  && mkdir -p /usr/local/share \
+  && npm ls -g --depth=0 --json \
+    | jq -r '.dependencies | to_entries[] | select(.key | IN("@opencode/cli", "@openchamber/web", "playwright", "@informalsystems/quint")) | "\(.key) \(.value.version)"' \
+    >> /usr/local/share/image-versions.txt \
+  && test "$(wc -l < /usr/local/share/image-versions.txt)" -eq 4
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 
-# Install the Chromium build of the pinned Playwright and its system libraries.
+# Install the Chromium build of the installed Playwright and its system libraries.
 # The root file system is read-only at runtime, so this is the only browser build.
 RUN playwright install --with-deps chromium \
   && rm -rf /var/lib/apt/lists/* \
@@ -43,7 +49,8 @@ RUN playwright install --with-deps chromium \
   && test "$#" -eq 1 \
   && test -x "$1" \
   && ln -s "$1" /usr/local/bin/chromium \
-  && chromium --version
+  && printf 'chromium %s\n' "$(chromium --version)" >> /usr/local/share/image-versions.txt \
+  && cat /usr/local/share/image-versions.txt
 
 ENV CHROME_PATH=/usr/local/bin/chromium
 

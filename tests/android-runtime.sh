@@ -43,7 +43,9 @@ android -V
 avdmanager list target -c
 adb version
 aapt2 version
-test "$(quint --version)" = 0.33.1
+cat /usr/local/share/image-versions.txt
+command -v quint >/dev/null
+test "$(quint --version)" = "$(awk '\''$1 == "@informalsystems/quint" { print $2 }'\'' /usr/local/share/image-versions.txt)"
 test "$PLAYWRIGHT_BROWSERS_PATH" = /opt/ms-playwright
 test "$CHROME_PATH" = /usr/local/bin/chromium
 test "$(command -v chromium)" = /usr/local/bin/chromium
