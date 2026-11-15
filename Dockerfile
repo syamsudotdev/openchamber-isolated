@@ -33,9 +33,19 @@ RUN node -e 'const [major, minor] = process.versions.node.split(".").map(Number)
     "@informalsystems/quint@${QUINT_VERSION}" \
   && npm cache clean --force
 
-# Install only the Chromium system libraries. Projects download their own browser builds.
-RUN playwright install-deps chromium \
-  && rm -rf /var/lib/apt/lists/*
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+
+# Install the Chromium build of the pinned Playwright and its system libraries.
+# The root file system is read-only at runtime, so this is the only browser build.
+RUN playwright install --with-deps chromium \
+  && rm -rf /var/lib/apt/lists/* \
+  && set -- /opt/ms-playwright/chromium-*/chrome-linux64/chrome \
+  && test "$#" -eq 1 \
+  && test -x "$1" \
+  && ln -s "$1" /usr/local/bin/chromium \
+  && chromium --version
+
+ENV CHROME_PATH=/usr/local/bin/chromium
 
 COPY install-tools.sh /opt/bootstrap/install-tools.sh
 RUN TARGETARCH="${TARGETARCH}" sh /opt/bootstrap/install-tools.sh \
@@ -78,7 +88,6 @@ ENV XDG_DATA_HOME=/home/node/.local/share
 ENV XDG_CACHE_HOME=/home/node/.cache
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
-ENV PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright
 
 ENV OPENCODE_CONFIG_DIR=/home/node/.config/opencode
 ENV OPENCODE_CONFIG=/home/node/.config/opencode/opencode.jsonc

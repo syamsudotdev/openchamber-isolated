@@ -29,7 +29,7 @@ probe=$(mktemp "$ANDROID_HOME/.runtime-write.XXXXXX")
 rm "$probe"
 probe=$(mktemp /home/node/.runtime-write.XXXXXX)
 rm "$probe"
-for directory in /opt /opt/bootstrap /opt/temurin-25 /opt/android-cli; do
+for directory in /opt /opt/bootstrap /opt/temurin-25 /opt/android-cli /opt/ms-playwright; do
     if probe=$(mktemp "$directory/.runtime-write.XXXXXX" 2>/dev/null); then
         rm "$probe"
         printf "FAIL: %s must remain read-only\n" "$directory" >&2
@@ -44,6 +44,10 @@ avdmanager list target -c
 adb version
 aapt2 version
 test "$(quint --version)" = 0.33.1
+test "$PLAYWRIGHT_BROWSERS_PATH" = /opt/ms-playwright
+test "$CHROME_PATH" = /usr/local/bin/chromium
+test "$(command -v chromium)" = /usr/local/bin/chromium
+chromium --headless --no-sandbox --dump-dom about:blank | grep -F "<html>" >/dev/null
 test -f "$ANDROID_HOME/platforms/android-36/android.jar"
 test -d "$ANDROID_HOME/build-tools/37.0.0"
 android --sdk="$ANDROID_HOME" sdk list
