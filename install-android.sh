@@ -15,6 +15,11 @@ android_cli=${ANDROID_CLI_BIN:-/opt/android-cli/bin/android}
   exit 1
 }
 
+# An exact value carries the release version, for example 25.0.5+8.
+temurin_version=${TEMURIN_VERSION:-latest}
+versions_file=${IMAGE_VERSIONS_FILE:-/usr/local/share/image-versions.txt}
+repository=https://dl.google.com/android/repository
+
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 trap 'exit 1' HUP INT TERM
@@ -24,12 +29,123 @@ download() {
     --connect-timeout 15 --max-time 180 --output "$scratch/$1" "$2"
 }
 
-download jdk.tar.gz 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz'
-printf '%s  %s\n' dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e "$scratch/jdk.tar.gz" | sha256sum --check --status
-download cmdline.zip 'https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip'
-printf '%s  %s\n' e025545c62a8e64c7559119566a569fb1dec5f60 "$scratch/cmdline.zip" | sha1sum --check --status
-download platform.zip 'https://dl.google.com/android/repository/platform-tools_r37.0.1-linux.zip'
-printf '%s  %s\n' 477254aa5f903c15cf51001717bdf347fb6b53e0 "$scratch/platform.zip" | sha1sum --check --status
+# The API returns both the download link and its SHA256.
+if [ "$temurin_version" = latest ]; then
+  temurin_api='https://api.adoptium.net/v3/assets/latest/25/hotspot?architecture=x64&image_type=jdk&os=linux&vendor=eclipse'
+else
+  # The release-name endpoint takes the URL-encoded release name.
+  temurin_release_name="jdk-$temurin_version"
+  temurin_encoded=$(printf '%s' "$temurin_release_name" | sed 's/+/%2B/g')
+  temurin_api="https://api.adoptium.net/v3/assets/release_name/eclipse/$temurin_encoded?architecture=x64&image_type=jdk&os=linux&vendor=eclipse"
+fi
+download temurin.json "$temurin_api"
+temurin_fields=$(jq -er '
+  [ if type == "array" then .[] | .binary.package else .binaries[] | .package end ]
+  | map(select(.link != null and .checksum != null))
+  | if length == 1 then .[0] else empty end
+  | [.link, .checksum] | @tsv
+' "$scratch/temurin.json") || {
+  printf 'Unexpected Adoptium API response for Temurin %s\n' "$temurin_version" >&2
+  exit 1
+}
+tab=$(printf '\t')
+temurin_url=${temurin_fields%%"$tab"*}
+temurin_sha256=${temurin_fields#*"$tab"}
+temurin_release=$(jq -er '
+  (if type == "array" then .[0] else . end)
+  | .release_name
+  | select(type == "string" and length > 0)
+' "$scratch/temurin.json") || {
+  printf 'Adoptium API response has no release name for Temurin %s\n' "$temurin_version" >&2
+  exit 1
+}
+
+# The repository XML names the latest stable Linux archive and its SHA1.
+download repository2-3.xml "$repository/repository2-3.xml"
+if ! uv run --no-project python -I - "$scratch/repository2-3.xml" > "$scratch/android-archives" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+wanted = {"cmdline-tools;latest": "cmdline-tools", "platform-tools": "platform-tools"}
+found = {kind: [] for kind in wanted.values()}
+
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError) as error:
+    sys.exit(f"cannot parse the Android repository XML: {error}")
+
+for package in root.findall("remotePackage"):
+    kind = wanted.get(package.get("path", ""))
+    if kind is None or package.get("obsolete") == "true":
+        continue
+    channel = package.find("channelRef")
+    if channel is None or channel.get("ref") != "channel-0":
+        continue
+    revision = package.find("revision")
+    parts = []
+    for field in ("major", "minor", "micro"):
+        value = revision.find(field) if revision is not None else None
+        if value is not None and value.text:
+            parts.append(value.text)
+    version = ".".join(parts)
+    for archive in package.findall("archives/archive"):
+        host_os = archive.find("host-os")
+        if host_os is None or host_os.text != "linux":
+            continue
+        host_arch = archive.find("host-arch")
+        if host_arch is not None and host_arch.text != "x64":
+            continue
+        complete = archive.find("complete")
+        if complete is None:
+            continue
+        url = complete.find("url")
+        checksum = complete.find("checksum")
+        if url is None or not url.text or checksum is None or not checksum.text:
+            sys.exit(f"entry {package.get('path')} has no Linux URL or checksum")
+        if checksum.get("type") != "sha1":
+            sys.exit(f"entry {package.get('path')} has no SHA1 checksum")
+        found[kind].append((url.text, checksum.text, version))
+
+for kind in ("cmdline-tools", "platform-tools"):
+    entries = found[kind]
+    if len(entries) != 1:
+        sys.exit(f"expected one Linux {kind} archive on channel-0, found {len(entries)}")
+    url, checksum, version = entries[0]
+    name = url.rsplit("/", 1)[-1] if kind == "cmdline-tools" else version
+    if not name:
+        sys.exit(f"entry {kind} has no archive name or revision")
+    print(f"{kind}\t{url}\t{checksum}\t{name}")
+PY
+then
+  printf '%s\n' 'Cannot resolve the Android SDK packages from repository2-3.xml' >&2
+  exit 1
+fi
+
+cmdline_url=''
+platform_url=''
+while IFS= read -r line; do
+  kind=${line%%"$tab"*}
+  rest=${line#*"$tab"}
+  url=${rest%%"$tab"*}
+  rest=${rest#*"$tab"}
+  checksum=${rest%%"$tab"*}
+  name=${rest#*"$tab"}
+  case "$kind" in
+    cmdline-tools) cmdline_url=$url cmdline_sha1=$checksum cmdline_name=$name ;;
+    platform-tools) platform_url=$url platform_sha1=$checksum platform_version=$name ;;
+  esac
+done < "$scratch/android-archives"
+[ -n "${cmdline_url:-}" ] && [ -n "${platform_url:-}" ] || {
+  printf '%s\n' 'Android repository XML has no Linux cmdline-tools or platform-tools archive' >&2
+  exit 1
+}
+
+download jdk.tar.gz "$temurin_url"
+printf '%s  %s\n' "$temurin_sha256" "$scratch/jdk.tar.gz" | sha256sum --check --status
+download cmdline.zip "$repository/$cmdline_url"
+printf '%s  %s\n' "$cmdline_sha1" "$scratch/cmdline.zip" | sha1sum --check --status
+download platform.zip "$repository/$platform_url"
+printf '%s  %s\n' "$platform_sha1" "$scratch/platform.zip" | sha1sum --check --status
 
 # Google publishes no immutable digest for the approved mutable CLI URL.
 download android 'https://dl.google.com/android/cli/latest/linux_x86_64/android'
@@ -61,6 +177,13 @@ fi
 
 # SDK package executables must also be available to the runtime node user.
 chmod -R a+rX "$ANDROID_HOME"
+
+mkdir -p "$(dirname "$versions_file")"
+{
+  printf 'temurin %s\n' "$temurin_release"
+  printf 'cmdline-tools %s\n' "$cmdline_name"
+  printf 'platform-tools %s\n' "$platform_version"
+} >> "$versions_file"
 
 # These run only during image construction, not during container startup.
 "$JAVA_HOME/bin/java" -version

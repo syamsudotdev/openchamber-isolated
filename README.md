@@ -288,10 +288,10 @@ The image preinstalls these tools through `install-android.sh`:
 
 | Tool | Version or SDK package | Location |
 | --- | --- | --- |
-| Eclipse Temurin JDK | `25.0.4.1+1` | `/opt/temurin-25` |
+| Eclipse Temurin JDK | Latest Java 25 release, or `TEMURIN_VERSION` | `/opt/temurin-25` |
 | Official Android CLI | Mutable `latest` | `/opt/android-cli/bin/android` |
-| Android command-line tools | `23.0` | `/opt/android-sdk/cmdline-tools/latest` |
-| Android platform-tools | `37.0.1` | `/opt/android-sdk/platform-tools` |
+| Android command-line tools | Latest stable | `/opt/android-sdk/cmdline-tools/latest` |
+| Android platform-tools | Latest stable | `/opt/android-sdk/platform-tools` |
 | Android API platform | `platforms;android-36` | `/opt/android-sdk/platforms/android-36` |
 | Android build-tools | `build-tools;37.0.0` | `/opt/android-sdk/build-tools/37.0.0` |
 
@@ -307,7 +307,7 @@ The image preinstalls these tools through `install-android.sh`:
 
 Building the image accepts the Android SDK licenses through `sdkmanager`. The user explicitly authorized this acceptance. Review the [Android SDK License Agreement](https://developer.android.com/studio/terms) before building or distributing the image.
 
-The command-line tools and platform-tools archives use fixed release URLs and Google's published SHA1 checksums. The Android CLI uses the official mutable `latest` download and has no official immutable digest for this baseline. `platforms;android-36` selects an API level, not a fixed package revision. Its revision can change between builds. These downloads prevent full reproducibility.
+The installer reads Temurin's download link and SHA256 from the Adoptium API: `assets/latest/25/hotspot` for `latest`, or `assets/release_name/eclipse/jdk-<TEMURIN_VERSION>` for an exact value such as `25.0.5+8`. It reads the URLs and SHA1 checksums of the latest stable (`channel-0`) Linux command-line tools and platform-tools from Google's `repository2-3.xml`. It verifies each archive before it creates any destination, and it appends the resolved versions to `/usr/local/share/image-versions.txt`. The Android CLI uses the official mutable `latest` download and has no official immutable digest for this baseline. `platforms;android-36` selects an API level, not a fixed package revision. Its revision can change between builds. These downloads prevent full reproducibility.
 
 Compose mounts the writable `android-sdk` named volume at `/opt/android-sdk`. Docker copies the image SDK contents into a fresh empty volume on first use. The image assigns the SDK to `node:node`, so the seeded volume permits SDK installation and updates as `node` without world-writable permissions. Both Android environment variables continue to point to `/opt/android-sdk`. SDK packages and SDK lock and state files persist across container replacement.
 
