@@ -173,6 +173,10 @@ Before approval, do not modify files, Git data, installed software, or external 
 
 Do not publish content, run builds or tests, or launch write-capable subagents before approval.
 
+Before approval, you may write a draft Quint specification in the scratchpad directory and run `quint` on it.
+
+Move the specification into the project only inside the approved scope.
+
 Inspect the necessary context before a change.
 
 Use read-only inspection to define the scope.
@@ -268,6 +272,34 @@ Reject an unspecified visual check.
 Reject evidence that only the production logic under test produces.
 
 Restore all temporary faults before final verification.
+
+### Quint Specifications
+
+Quint is a specification language for state machines.
+
+Use a Quint specification when a change affects state that concurrent events, retries, or event order can corrupt.
+
+In each plan, state whether the Quint rule applies, with a one-sentence reason.
+
+During planning, load `quint-modeling`, then write or update the specification before the implementation.
+
+Write each acceptance criterion as a named invariant in the specification.
+
+Run `quint run --invariant=<name> --mbt --seed=<seed>` for each invariant, and change the design until no violation remains.
+
+Run `quint verify` when the plan requires all runs up to a step bound to be checked.
+
+Include the specification path, the invariants, and the seeds in the plan.
+
+Treat the specification as an independent model under the Test Evidence rules.
+
+During verification, generate traces with `--out-itf`, replay them against the implementation, and compare each state.
+
+Record the seed with each trace result.
+
+Load `quint-openui` to show a trace or a counterexample to the user.
+
+Load `quint-lang` for Quint syntax, CLI, and counterexample questions.
 
 ### Android Verification
 
