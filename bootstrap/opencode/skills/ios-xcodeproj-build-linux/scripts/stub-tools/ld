@@ -1,0 +1,33 @@
+#!/bin/sh
+# Linux stand-in for Apple's ld. clang finds `ld` on PATH, which on Linux is GNU ld
+# ("unrecognised emulation mode: llvm" for an Apple link). Apple links carry -arch,
+# -platform_version or an old-style -<os>_version_min flag; they go to the SDK
+# toolset's ld64.lld, which picks its Darwin flavor from that name. ld64.lld accepts
+# only -platform_version, so the old-style flags are translated (clang emits them when
+# it assumes an old linker). Host links (for example SwiftPM manifests) go to the
+# host's ld. $STUB_LD and $STUB_HOST_LD override the paths.
+set -eu
+[ -n "${STUB_TOOL_LOG:-}" ] && printf 'ld %s\n' "$*" >> "$STUB_TOOL_LOG"
+apple=0 sdk=
+prev=
+for arg in "$@"; do
+    case "$arg" in
+    -arch | -platform_version | -iphoneos_version_min | -ios_version_min | -ios_simulator_version_min) apple=1 ;;
+    esac
+    [ "$prev" = -syslibroot ] && sdk=$(printf '%s' "$arg" | sed -n 's#.*OS\([0-9][0-9.]*\)\.sdk.*#\1#p')
+    prev=$arg
+done
+[ "$apple" -eq 1 ] || exec "${STUB_HOST_LD:-/usr/bin/ld}" "$@"
+sdk=${sdk:-27.0}
+n=$# i=0
+while [ "$i" -lt "$n" ]; do
+    arg=$1; shift; i=$((i + 1))
+    case "$arg" in
+    -iphoneos_version_min | -ios_version_min)
+        set -- "$@" -platform_version ios "$1" "$sdk"; shift; i=$((i + 1)) ;;
+    -ios_simulator_version_min)
+        set -- "$@" -platform_version ios-simulator "$1" "$sdk"; shift; i=$((i + 1)) ;;
+    *) set -- "$@" "$arg" ;;
+    esac
+done
+exec "${STUB_LD:-$HOME/.config/xtool/darwin.xtoolsdk/toolset/bin/ld64.lld}" "$@"

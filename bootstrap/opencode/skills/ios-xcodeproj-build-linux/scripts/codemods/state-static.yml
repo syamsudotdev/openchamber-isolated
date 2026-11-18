@@ -1,0 +1,44 @@
+# Codemod: `@State static var` in SwiftUI preview code.
+# Swift 6.4.1 with the iOS 27 SDK's @State macro rejects it ("static functions must not
+# be declared mutating"). The rules drop @State, keep the value as a static property,
+# and pass a constant binding where the projected value `$name` was used.
+# Run with ast-grep 0.51.3 (uvx --from ast-grep-cli==0.51.3 ast-grep), on the gate
+# copy only. All rules match the original tree in one scan, so apply them together.
+id: state-static-declaration
+language: swift
+rule:
+  any:
+    - pattern: "@State static var $NAME = $VALUE"
+    - pattern: "@State private static var $NAME = $VALUE"
+fix: "nonisolated(unsafe) static var $NAME = $VALUE"
+---
+id: state-static-typed-declaration
+language: swift
+rule:
+  any:
+    - pattern: "@State static var $NAME: $TYPE = $VALUE"
+    - pattern: "@State private static var $NAME: $TYPE = $VALUE"
+fix: "nonisolated(unsafe) static var $NAME: $TYPE = $VALUE"
+---
+id: state-static-projected-use
+language: swift
+rule:
+  kind: simple_identifier
+  pattern: $ID
+  regex: '^\$[A-Za-z_][A-Za-z0-9_]*$'
+  inside:
+    kind: class_declaration
+    stopBy: end
+    has:
+      stopBy: end
+      any:
+        - pattern: "@State static var $N = $V"
+        - pattern: "@State static var $N: $T = $V"
+        - pattern: "@State private static var $N = $V"
+        - pattern: "@State private static var $N: $T = $V"
+transform:
+  BARE:
+    substring:
+      source: $ID
+      startChar: 1
+fix: ".constant($BARE)"

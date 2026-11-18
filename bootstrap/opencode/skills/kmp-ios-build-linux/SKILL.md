@@ -26,6 +26,23 @@ Read [the build reference](references/build.md) before executing this workflow.
 It supplies packaging, protected signing, verification limits, and version-specific installation commands.
 Replace its literal examples with inspected project and setup values before use.
 
+## One-liners
+
+Find every wall in one pass, not one wall per attempt. Write `<GATE>/gate.env` ([reference: gate settings and one-liners](references/build.md#gate-settings-and-one-liners)), then use these two commands:
+
+```sh
+bash ~/.config/opencode/skills/kmp-ios-build-linux/scripts/preflight.sh <GATE>
+```
+
+```sh
+bash ~/.config/opencode/skills/kmp-ios-build-linux/scripts/build.sh <GATE> <n>
+```
+
+- Run the preflight before each framework build, packaging and signing step. Fix every `FAIL` it lists in one round, then run it again. Continue only when it prints `RESULT: 0 failed`. It reads no secret.
+- `build.sh` runs the framework build and the unsigned Release packaging under `env -i`, and prints each step's exit code, time and distinct errors. It refuses to start while another Gradle command runs.
+- Signing stays the guarded route of [reference section 8](references/build.md#8-protected-signing-and-signed-artifact-checks); no one-liner replaces its approvals.
+- When an attempt fails on a new kind of problem, add a check for it to `preflight.sh`.
+
 ## Workflow
 
 ### 0. Request signing inputs for the default goal

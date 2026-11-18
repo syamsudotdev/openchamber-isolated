@@ -19,6 +19,37 @@ Each shell block contains one physical command; stop on failure.
 The protected signing fragments in section 8 require one approved controlled lifetime, not independent tool calls.
 The default deliverable is a signed development IPA; unsigned output alone completes the goal only when the user explicitly narrows it.
 
+## Gate settings and one-liners
+
+`scripts/preflight.sh` and `scripts/build.sh` read `<GATE>/gate.env`. It holds paths and names only. Never put a password or key in it.
+
+```sh
+PROJECT=<KMP checkout in the gate>
+HOST_DIR=<SwiftPM packaging root of the host>
+FRAMEWORK_TASK=<Gradle task, for example :shared:linkReleaseFrameworkIosArm64>
+FRAMEWORK_BUILD_CMD=<optional reviewed gate script that runs the task with the qualified port>
+GRADLE_ARGS=<optional extra Gradle arguments>
+JAVA_HOME_FOR_BUILD=<JDK root>
+PORT_EVIDENCE=<setup's qualified port record>
+SWIFT_BIN=<Swift distribution usr/bin>
+SDK_TOOLSET_BIN=<SDK toolset bin, for dsymutil>
+TOOL_LD_LIBRARY_PATH=<setup's library path for Swift and xtool, if any>
+XTOOL=<xtool path>
+XTOOL_HOME=<HOME that holds xtool's SDK>
+XTOOL_XDG_CONFIG_HOME=<setup's XDG_CONFIG_HOME, if xtool needs it>
+OBJDUMP=<llvm-objdump path>
+ZIP=<setup-verified zip, if not on PATH>
+ZSIGN=<verified zsign path>
+P12=<.p12 path>  PASSWORD_FILE=<password file path>  PROFILE=<.mobileprovision path>
+ENTITLEMENTS=<reviewed entitlements file>  BUNDLE_ID=<bundle ID>  UDID=<target UDID>
+SIGN_STAGE_ROOT=<optional tmpfs staging root>
+DEVTOOLS=<folder with bin/idevice_id and bin/ideviceinfo>  USBMUXD_SOCKET=<device relay socket>
+```
+
+The preflight checks, in one run: the project and `gradlew`, Java, running Gradle commands (fail) and idle daemons (warning), the port evidence, swift, xtool and its Darwin SDK, `unzip`, `zip`, `openssl`, `python3`, the Mach-O inspector, zsign v1.1.3, the owner, mode, folder and Git status of the `.p12` and the password file (never their contents), the entitlements file, a tmpfs staging root, the profile's public metadata (development type, `get-task-allow`, expiry, App ID, UDID), and the device route with Developer Mode.
+
+Tested on 2026-11-18 against a private KMP app checkout in `<GATE>/app-src`: one run found an idle Gradle daemon (warning), the missing port record, the SDK state for xtool 1.22.2, and each missing signing input.
+
 ## 1. Build the actual framework
 
 Proceed only when setup proves that the version-matched port enables Apple final-binary tasks on the actual Linux host and integrates with this project's Gradle/plugin pipeline.
@@ -303,6 +334,7 @@ Record the printed directory and use that literal path in later commands. Read `
 - Development, usable for USB install: `ProvisionedDevices` contains the target UDID, `Entitlements.get-task-allow` is `true`, and the `DeveloperCertificates` entry's subject starts with `Apple Development:` or the legacy `iPhone Developer:` (both are development identities).
 - App Store or TestFlight distribution, not installable over USB: no `ProvisionedDevices`, `beta-reports-active` present, `get-task-allow` `false`, subject `Apple Distribution:`. This is the CI identity; ask for a development set instead.
 - For a new development set, give the human these steps; the human runs them, not the agent. Work inside an owner-only `700` directory with `umask 077`: register the UDID under Devices; create an Apple Development certificate (a CSR from `openssl req -new -newkey rsa:2048 -nodes` works on Linux); convert the downloaded DER `.cer` with `openssl x509 -inform DER`; export the `.p12` with `openssl pkcs12 -export -passout file:<pwfile>`; then create an iOS App Development profile with that certificate and device. Delete the unencrypted `-nodes` key after export. All files follow [secret placement and leak handling](#secret-placement-and-leak-handling).
+- When the agent runs in a container and the human uses the developer website on the container's host, the browser cannot reach files in the container. The human runs the same steps on the host, then streams each finished file (`.p12`, password file, profile) into the container, one command per file: `docker exec -i -u <user> <container> sh -c 'umask 077 && cat > <signing dir>/<file>' < <file>` (Podman: `podman exec`). Each file arrives owned by `<user>` with mode `600`; no secret passes through the clipboard, the chat or a command line (2026-11-18).
 
 Place and read every signing secret under [secret placement and leak handling](#secret-placement-and-leak-handling).
 Check the `.p12` against the profile without extracting the private key:
@@ -491,7 +523,7 @@ Do not report `SignatureVerified` or `InstallabilityProven` without relevant evi
 Run device operations only when the user explicitly authorizes installation and launch on the intended target.
 Skill creation and signed-artifact production do not grant that authorization.
 When authorization or access is missing, report `DevicePending` and provide the adapted commands below as next steps, not executed results.
-Ask the human to connect the device by USB, unlock it, and complete Trust and passcode prompts when shown.
+Ask the human to connect the device by USB (or over Wi-Fi through netmuxd on the host), unlock it, and complete Trust and passcode prompts when shown.
 On iOS 16+, enable Settings > Privacy & Security > Developer Mode, restart, and confirm Turn On.
 Developer Mode does not bypass signing or provisioning.
 Require approved host/container USB and usbmuxd visibility; return a pending connection state rather than guess root mounts or passthrough changes.
@@ -510,6 +542,7 @@ Select the installer syntax from `ideviceinstaller --help`, not from the distrib
 idevice_id --list
 ```
 Enumerate visible USB devices and select only the explicitly authorized target covered by the profile.
+A device that the host reaches over Wi-Fi through netmuxd is a network device, and `--list` omits it. List it with `idevice_id -n`, and add `-n` to every `idevicepair`, `ideviceinfo`, `ideviceinstaller` and `idevicecrashreport` command for that device (2026-11-18, iOS 27.2.1).
 
 ```sh
 idevicepair --udid <UDID> validate
@@ -564,6 +597,7 @@ Launch the actual installed bundle and require a successful debugserver launch r
 xtool launch does not read the saved login token, but it requires compatible device debug services and the installed bundle.
 On iOS 17 and later, debugserver access goes through Apple's CoreDevice developer tunnel; this workflow has no verified Linux route to it, and mounting a developer disk image changes the device and needs its own approval. A launch attempt on such a device is an experiment to propose, not a default step.
 When Linux launch is unavailable, ask the human to open the app from the home screen and to report what they observe. Record that report as a human observation, keep the outcome `Installed`, and list launch as pending.
+When the human reports a crash, copy the crash reports without deleting them from the device: `idevicecrashreport -u <UDID> -k <GATE>/logs/crash-<n>` (in setup's `root/usr/bin`; the wrapper `bin/` folder may not have it). Read only the `<executable name>-<date>.ips` files: the first line is JSON metadata, the rest is JSON with `exception`, `asi`, `lastExceptionBacktrace` and `threads`. Delete the reports of other apps.
 If enumeration needs xtool, its verified interface is `AppRun devices --usb --no-wait`; use the actual AppRun path and retain the explicit target selection.
 Unsupported device OS, DDI, or debugservice errors are target-compatibility blockers; research official sources within approved scope rather than claim universal modern-iOS support.
 Record target UDID, prior state, artifact identity, installation completion, postinstall bundle/version, launch response, and remaining limits.

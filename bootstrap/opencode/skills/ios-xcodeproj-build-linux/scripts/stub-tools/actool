@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""Linux stand-in for Xcode's actool.
+
+It compiles nothing. It answers the version and asset-tag queries, writes empty
+outputs so the build graph completes, and writes the Swift asset symbols with
+../asset_symbols.py (installed next to this file). The app then has no Assets.car,
+a recorded limit. Each call is logged to $STUB_TOOL_LOG.
+"""
+
+import os
+import subprocess
+import sys
+
+PLIST = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+    '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+    '<plist version="1.0">{}</plist>\n'
+)
+args = sys.argv[1:]
+log = os.environ.get("STUB_TOOL_LOG")
+if log:
+    with open(log, "a") as handle:
+        handle.write("actool " + " ".join(args) + "\n")
+
+if "--version" in args:
+    sys.stdout.write(PLIST.format(
+        "<dict><key>com.apple.actool.version</key><dict>"
+        "<key>bundle-version</key><string>24000</string>"
+        "<key>short-bundle-version</key><string>27.0</string></dict></dict>"))
+    sys.exit(0)
+if "--print-asset-tag-combinations" in args:
+    sys.stdout.write(PLIST.format(
+        "<dict><key>com.apple.actool.asset-tag-combinations</key><array/></dict>"))
+    sys.exit(0)
+
+
+def parent(path):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+
+
+# Swift Build passes --generate-swift-asset-symbol-extensions only as NO (packages, or a
+# target with the setting off); a target with the setting on gets no option, so YES is
+# the default (2026-11-18, build 19).
+catalogs, symbols_out, symbol_extensions = [], None, True
+index = 0
+while index < len(args):
+    arg = args[index]
+    value = args[index + 1] if index + 1 < len(args) else None
+    if arg == "--compile":
+        os.makedirs(value, exist_ok=True)
+        index += 2
+    elif arg == "--output-partial-info-plist":
+        parent(value)
+        open(value, "w").write(PLIST.format("<dict/>"))
+        index += 2
+    elif arg == "--export-dependency-info":
+        # One version record: opcode 0x00, then a null-terminated string.
+        parent(value)
+        open(value, "wb").write(b"\x00actool-stub\x00")
+        index += 2
+    elif arg == "--generate-swift-asset-symbols":
+        symbols_out = value
+        index += 2
+    elif arg == "--generate-swift-asset-symbol-extensions":
+        symbol_extensions = value == "YES"
+        index += 2
+    elif arg in ("--generate-objc-asset-symbols", "--generate-asset-symbol-index"):
+        parent(value)
+        open(value, "w").close()
+        index += 2
+    elif arg.endswith(".xcassets"):
+        catalogs.append(arg)
+        index += 1
+    else:
+        index += 1
+
+if symbols_out:
+    parent(symbols_out)
+    generator = os.path.join(os.path.dirname(os.path.abspath(__file__)), "asset_symbols.py")
+    options = []
+    if symbol_extensions:
+        # UIKit headers of the xtool SDK under $HOME, for Xcode's skip rule.
+        sdks = os.path.join(os.environ.get("HOME", ""), ".config/xtool/darwin.xtoolsdk/Xcode.app/"
+                            "Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs")
+        found = sorted(d for d in os.listdir(sdks) if d.startswith("iPhoneOS")) if os.path.isdir(sdks) else []
+        options = ["--extensions"]
+        if found:
+            options += ["--uikit-headers", os.path.join(
+                sdks, found[-1], "System/Library/Frameworks/UIKit.framework/Headers")]
+    subprocess.run([sys.executable, "-I", generator, *options, symbols_out, *catalogs],
+                   check=True, stdout=subprocess.DEVNULL)
+sys.stdout.write(PLIST.format("<dict/>"))

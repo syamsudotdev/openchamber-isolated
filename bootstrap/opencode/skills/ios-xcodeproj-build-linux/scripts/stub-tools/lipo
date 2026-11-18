@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""Linux stand-in for Apple's lipo: the subset Swift Build uses.
+
+Supported: `lipo -create -output OUT IN...` (one input is copied; several thin
+inputs become a fat file), `-info` and `-archs`. Any other use fails loudly, so a
+new need shows up in the build log. Each call is logged to $STUB_TOOL_LOG.
+"""
+
+import os
+import shutil
+import struct
+import sys
+
+FAT_MAGIC, MH_MAGIC_64, MH_MAGIC = 0xCAFEBABE, 0xFEEDFACF, 0xFEEDFACE
+ARCH_NAMES = {(0x0100000C, 0): "arm64", (0x0100000C, 2): "arm64e", (0x01000007, 3): "x86_64", (12, 9): "armv7"}
+
+args = sys.argv[1:]
+log = os.environ.get("STUB_TOOL_LOG")
+if log:
+    with open(log, "a") as handle:
+        handle.write("lipo " + " ".join(args) + "\n")
+
+
+def macho_arch(head):
+    magic = struct.unpack("<I", head[:4])[0]
+    if magic not in (MH_MAGIC_64, MH_MAGIC):
+        return None
+    cputype, cpusubtype = struct.unpack("<ii", head[4:12])
+    return cputype & 0xFFFFFFFF, cpusubtype & 0x00FFFFFF
+
+
+def thin_arch(path):
+    """(cputype, cpusubtype) of a thin Mach-O file, or of the first Mach-O member of
+    a static library (ar archive), which is what static frameworks ship."""
+    data = open(path, "rb").read()
+    arch = macho_arch(data[:12])
+    if arch:
+        return arch
+    if data.startswith(b"!<arch>\n"):
+        pos = 8
+        while pos + 60 <= len(data):
+            name, size = data[pos:pos + 16], int(data[pos + 48:pos + 58].strip())
+            body = pos + 60
+            if name.startswith(b"#1/"):  # BSD long name stored before the member data
+                skip = int(name[3:].strip())
+                arch = macho_arch(data[body + skip: body + skip + 12])
+            else:
+                arch = macho_arch(data[body: body + 12])
+            if arch:
+                return arch
+            pos = body + size + (size & 1)
+    raise SystemExit(f"lipo stand-in: no thin Mach-O content in {path}")
+
+
+def archs(path):
+    with open(path, "rb") as handle:
+        head = handle.read(8)
+    if struct.unpack(">I", head[:4])[0] == FAT_MAGIC:
+        count = struct.unpack(">I", head[4:8])[0]
+        with open(path, "rb") as handle:
+            handle.seek(8)
+            entries = [struct.unpack(">iiIII", handle.read(20)) for _ in range(count)]
+        return [ARCH_NAMES.get((c & 0xFFFFFFFF, s & 0x00FFFFFF), str(c)) for c, s, *_ in entries]
+    return [ARCH_NAMES.get(thin_arch(path), "unknown")]
+
+
+if args and args[0] == "-create":
+    out = args[args.index("-output") + 1]
+    inputs = [a for i, a in enumerate(args[1:], 1) if a != "-output" and args[i - 1] != "-output"]
+    if len(inputs) == 1:
+        shutil.copyfile(inputs[0], out)
+        shutil.copymode(inputs[0], out)
+        sys.exit(0)
+    slices = []
+    for path in inputs:
+        cputype, cpusubtype = thin_arch(path)
+        slices.append((cputype, cpusubtype, open(path, "rb").read()))
+    align = 14  # 2^14 = 16 KiB, the arm64 page size
+
+    def aligned(value):
+        return (value + (1 << align) - 1) & ~((1 << align) - 1)
+
+    offsets, position = [], aligned(8 + 20 * len(slices))
+    for _cputype, _cpusubtype, data in slices:
+        offsets.append(position)
+        position = aligned(position + len(data))
+    with open(out, "wb") as handle:
+        handle.write(struct.pack(">II", FAT_MAGIC, len(slices)))
+        for (cputype, cpusubtype, data), offset in zip(slices, offsets):
+            handle.write(struct.pack(">IIIII", cputype, cpusubtype, offset, len(data), align))
+        for (_cputype, _cpusubtype, data), offset in zip(slices, offsets):
+            handle.seek(offset)
+            handle.write(data)
+    shutil.copymode(inputs[0], out)
+elif args and args[0] in ("-info", "-archs"):
+    for path in args[1:]:
+        names = " ".join(archs(path))
+        print(names if args[0] == "-archs" else f"Architectures in the file {path}: {names}")
+else:
+    raise SystemExit(f"lipo stand-in: unsupported use: {' '.join(args)}")

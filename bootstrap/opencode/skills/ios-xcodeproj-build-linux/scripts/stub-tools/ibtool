@@ -1,0 +1,50 @@
+#!/bin/sh
+# Linux stand-in for Xcode's ibtool. It compiles nothing: it answers the version query
+# and writes empty outputs so the build graph completes. The app then has no compiled
+# nibs or storyboards (a recorded limit). Each call is logged to $STUB_TOOL_LOG.
+set -eu
+[ -n "${STUB_TOOL_LOG:-}" ] && printf 'ibtool %s\n' "$*" >> "$STUB_TOOL_LOG"
+
+plist_header='<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">'
+
+case " $* " in
+*" --version "*)
+    printf '%s\n<dict><key>com.apple.ibtool.version</key><dict><key>bundle-version</key><string>24000</string><key>short-bundle-version</key><string>27.0</string></dict></dict></plist>\n' "$plist_header"
+    exit 0
+    ;;
+esac
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+    --link)
+        # The destination of --link is a folder, for example a resource bundle.
+        mkdir -p "$2"
+        shift 2
+        ;;
+    --compile)
+        # A storyboard compiles to a folder, a xib to a file.
+        case "$2" in
+        *.storyboardc | */) mkdir -p "$2" ;;
+        *) [ -d "$2" ] || { mkdir -p "$(dirname "$2")" && : > "$2"; } ;;
+        esac
+        shift 2
+        ;;
+    --output-partial-info-plist)
+        mkdir -p "$(dirname "$2")"
+        printf '%s\n<dict/></plist>\n' "$plist_header" > "$2"
+        shift 2
+        ;;
+    --export-dependency-info)
+        # One version record: opcode 0x00, then a null-terminated string.
+        mkdir -p "$(dirname "$2")"
+        printf '\000%s\000' "ibtool-stub" > "$2"
+        shift 2
+        ;;
+    *)
+        shift
+        ;;
+    esac
+done
+printf '%s\n<dict/></plist>\n' "$plist_header"
