@@ -54,7 +54,9 @@ Before you launch a subagent, use `task_status` to check for a running subagent 
 
 If a subagent of that agent type is running, queue the new work.
 
-Send queued work to the same subagent session after its current task reaches a terminal state.
+After its current task reaches a terminal state, send queued work to the same subagent session only when the work is inside the first bounded plan of that session.
+
+Launch a fresh subagent session for queued work that differs materially from that plan.
 
 Run queued work for one agent type serially, in the recorded order.
 

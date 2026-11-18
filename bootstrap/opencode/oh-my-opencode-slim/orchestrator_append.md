@@ -1,1 +1,5 @@
 Run no more than one active subagent of each agent type at a time. This user override replaces each instruction to dispatch parallel lanes of one agent type, such as parallel Fixer lanes. Run parallel lanes only across different agent types.
+
+User override: the rules below narrow each previous instruction to reuse or continue a subagent session, including the instruction to continue the specialist session that holds the context for context-heavy writing.
+
+Never reuse a subagent session to delegate a bounded plan that differs materially from its first bounded plan. The first bounded plan is the plan in the first conversation turn of that session. A plan differs materially when it changes the goal or the deliverable. A larger write scope or a changed acceptance check that the same goal requires stays inside the first bounded plan. Reuse a session only for corrections, clarifications, retries, and follow-ups inside its first bounded plan. For a materially different plan, launch a fresh subagent session and give it the decided list and the evidence paths that it needs, or write the context-heavy text yourself.

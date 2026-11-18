@@ -521,11 +521,19 @@ A child is a delegated subagent session.
 
 For an implementation task, complete one shippable milestone in each parent session.
 
-Use a fresh child for unrelated work.
+Launch a fresh child for each bounded plan that differs materially from the first bounded plan of a retained child.
 
-Resume a compatible retained Reviewer or Oracle for a focused follow-up.
+The consultation scope of a Reviewer or Oracle is its first bounded plan: the question, the change or design under review, and the expected output in its first conversation turn.
 
-Do not launch a new Reviewer or Oracle when a compatible retained one exists.
+A consultation scope differs materially when it changes the question or the change or design under review. A clarification of the Reviewer's or Oracle's own output stays inside its consultation scope.
+
+Resume a retained Reviewer or Oracle only for a follow-up inside its consultation scope.
+
+Launch a fresh Reviewer or Oracle for a materially different consultation scope.
+
+Give the fresh Reviewer or Oracle the decided list and the evidence paths for its scope.
+
+Do not launch a new Reviewer or Oracle when a retained one has the same consultation scope.
 
 Run targeted checks in a child when the delegated task requires them.
 
