@@ -1,0 +1,72 @@
+name: Update versions
+
+on:
+  schedule:
+    - cron: '0 20 * * *'
+      timezone: America/Los_Angeles
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-versions-main
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: main
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '26.x'
+          check-latest: true
+      - name: Update validated pins
+        id: versions
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/update-versions.mjs
+      - name: Build with the latest tools
+        run: docker build --pull --no-cache --platform linux/amd64 -t openchamber-update-check .
+      - name: Record installed versions
+        run: |
+          set -eu
+          docker run --rm --platform linux/amd64 --entrypoint cat openchamber-update-check /usr/local/share/image-versions.txt > "$RUNNER_TEMP/image-versions.txt"
+          {
+            printf '%s\n' '## Installed versions' '' '```text'
+            cat "$RUNNER_TEMP/image-versions.txt"
+            printf '%s\n' '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Check installed pins
+        run: |
+          set -eu
+          for pair in '@opencode/cli OPENCODE_VERSION' '@openchamber/web OPENCHAMBER_VERSION'; do
+            set -- $pair
+            expected=$(sed -n "s/^ARG $2=//p" Dockerfile)
+            installed=$(awk -v name="$1" '$1 == name { print $2 }' "$RUNNER_TEMP/image-versions.txt")
+            test -n "$expected" && test "$installed" = "$expected" || { echo "Installed pin mismatch: $1" >&2; exit 1; }
+          done
+      - name: Check the runtime
+        run: sh tests/android-runtime.sh openchamber-update-check
+      - name: Commit and push only validated changes
+        if: steps.versions.outputs.changed == 'true'
+        env:
+          MESSAGE_PATH: ${{ steps.versions.outputs.message_path }}
+        run: |
+          set -eu
+          test "$(git branch --show-current)" = main
+          test -z "$(git ls-files --others --exclude-standard)"
+          test -z "$(git diff --cached --name-only)"
+          test "$(git diff --name-only | LC_ALL=C sort)" = "$(printf 'Dockerfile\nREADME.md')"
+          git diff --check
+          git fetch origin main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- Dockerfile README.md
+          git commit -F "$MESSAGE_PATH"
+          git push origin HEAD:main

@@ -268,7 +268,7 @@ Known snapshot limitations remain. The vendored codemap script mishandles `.giti
 
 ### Bundled Command-Line Tools
 
-The image uses Node.js 26 LTS on Debian 13 (trixie) through `node:26-trixie-slim`. The tag names the Debian release, so a later Debian release does not change the base without an edit. Each build installs the latest npm releases of OpenChamber (`@openchamber/web`), OpenCode (`@opencode/cli`), Playwright, and Quint (`@informalsystems/quint`). The build arguments `OPENCHAMBER_VERSION`, `OPENCODE_VERSION`, `PLAYWRIGHT_VERSION`, and `QUINT_VERSION` default to `latest`; an exact value, such as `--build-arg OPENCODE_VERSION=2.3.0`, selects that version. npm verifies each package against the registry integrity hash. The build records each installed version in `/usr/local/share/image-versions.txt` and prints that file. The build requires Node >=24.14.0 before npm installation. The npm install allows the install scripts of `@opencode/cli` and `node-pty` explicitly through `--allow-scripts`.
+The image uses Node.js 26 LTS on Debian 13 (trixie) through `node:26-trixie-slim`. The tag names the Debian release, so a later Debian release does not change the base without an edit. The image pins OpenChamber 2.7.3 (`@openchamber/web`) and OpenCode 2.3.2 (`@opencode/cli`). Each build installs the latest npm releases of Playwright and Quint (`@informalsystems/quint`). The build arguments `PLAYWRIGHT_VERSION` and `QUINT_VERSION` default to `latest`; an exact value in `--build-arg QUINT_VERSION=<version>` selects that version. npm verifies each package against the registry integrity hash. The build records each installed version in `/usr/local/share/image-versions.txt` and prints that file. The build requires Node >=24.14.0 before npm installation. The npm install allows the install scripts of `@opencode/cli` and `node-pty` explicitly through `--allow-scripts`.
 
 The system Python is 3.13 on Debian 13. A virtual environment created with the Debian 12 system Python 3.11, such as a `uv tool` environment, does not work after an upgrade from a Debian 12 image. Recreate it, for example with `uv tool install --reinstall <tool>`. Libraries that were extracted from Debian 12 packages into the home volume can also fail; install the matching Debian 13 package instead. The image installs the latest releases of `uv` and `uvx`, RTK OSS, `fff-mcp`, GitHub CLI `gh`, and `gitleaks` in `/usr/local/bin`. `install-tools.sh` supports release assets for Docker `TARGETARCH=amd64` or `arm64`, but the complete image accepts only `amd64` because of the Android SDK. The variables `UV_VERSION`, `RTK_VERSION`, `FFF_VERSION`, `GH_VERSION`, and `GITLEAKS_VERSION` default to `latest`; an exact value without a leading `v` selects that release.
 
@@ -337,18 +337,23 @@ The root filesystem remains read-only. Docker named volumes make `/home/node` an
 
 ## Update Versions
 
-Each build installs the latest release of each tool. A cached Docker layer keeps the versions of an earlier build, and the `node:26-trixie-slim` tag can move to a newer base. Rebuild without the cache and with the newest base:
+The `Dockerfile` pins OpenCode and OpenChamber to exact versions:
+
+```dockerfile
+ARG OPENCODE_VERSION=2.3.2
+ARG OPENCHAMBER_VERSION=2.7.3
+```
+
+Each build installs the latest release of each other tool. A cached Docker layer keeps the versions of an earlier build, and the `node:26-trixie-slim` tag can move to a newer base. Rebuild without the cache and with the newest base:
 
 ```bash
 docker compose build --pull --no-cache
 ```
 
-To select an exact version of one tool, pass its build argument, for example `docker compose build --no-cache --build-arg UV_VERSION=0.13.8`. Each argument defaults to `latest`:
+To select an exact version of one tool, pass its build argument, for example `docker compose build --no-cache --build-arg UV_VERSION=0.13.8`. Each of these arguments defaults to `latest`:
 
 | Build argument | Tool |
 | --- | --- |
-| `OPENCODE_VERSION` | `@opencode/cli` |
-| `OPENCHAMBER_VERSION` | `@openchamber/web` |
 | `PLAYWRIGHT_VERSION` | Playwright and its Chromium build |
 | `QUINT_VERSION` | `@informalsystems/quint` |
 | `UV_VERSION` | `uv` and `uvx` |
@@ -360,9 +365,18 @@ To select an exact version of one tool, pass its build argument, for example `do
 
 The Android command-line tools and platform-tools always use the latest stable entries of Google's SDK repository. `platforms;android-36` and `build-tools;37.0.0` stay fixed, because they are a project SDK choice. The build records every resolved version in `/usr/local/share/image-versions.txt`.
 
-Builds are not reproducible: two builds on different days can install different versions. A new release can also break the build or the runtime. Builds require network access. The host network configuration still controls connectivity and exposure; container restrictions do not make network services private.
+Builds are not fully reproducible: two builds on different days can install different versions of the tools that use `latest`. A new release can also break the build or the runtime. Builds require network access. The host network configuration still controls connectivity and exposure; container restrictions do not make network services private.
 
-The `Build image check` workflow runs daily at 20:00 in `America/Los_Angeles` and on a manual `workflow_dispatch` run from `main`. It runs the shell and plugin tests, builds a `linux/amd64` image with `--pull --no-cache`, writes `image-versions.txt` to the job summary, and runs `tests/android-runtime.sh` against the image. It does not commit or push. A failed run shows that the latest releases break the build or the runtime checks.
+The `Update versions` workflow runs daily at 20:00 in `America/Los_Angeles` and on a manual `workflow_dispatch` run from `main`. Each run does these steps in this order:
+
+1. `scripts/update-versions.mjs` checks npm `latest` for exact stable `@opencode/cli` and `@openchamber/web` versions. It rejects downgrades, invalid metadata, and inconsistent pins before it changes files. It changes only the two `Dockerfile` pins and their README references.
+2. The workflow builds a `linux/amd64` image with `--pull --no-cache`. Every run builds the image, also when no pin changes, so the run also checks the tools that use `latest`.
+3. The workflow writes `image-versions.txt` to the job summary.
+4. The workflow compares the installed `@opencode/cli` and `@openchamber/web` versions with the `Dockerfile` pins.
+5. The workflow runs `tests/android-runtime.sh` against the image.
+6. If a pin changed, the workflow commits only `Dockerfile` and `README.md` and pushes to `main` with `GITHUB_TOKEN`. Repository rules must permit this push.
+
+A run without a pin change creates no commit. A failure in any step prevents the push. A concurrent change to `main` after the final fetch causes a normal non-fast-forward push rejection; the workflow never forces a push. The commit message records the changed packages, their old and new versions, and official release links. Missing or minimal release notes produce a comparison link marked `Release notes unavailable`. GitHub API errors other than a missing release stop the update.
 
 GitHub runs scheduled workflows only from the default branch. Keep `main` as the default branch. Scheduled runs can be delayed or dropped under load. GitHub can disable scheduled workflows in public repositories after 60 days without repository activity. Check the Actions page if the runs stop.
 
