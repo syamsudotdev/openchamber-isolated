@@ -19,6 +19,7 @@ services:
     cap_drop:
       - ALL
     pids_limit: ${OPENCODE_PIDS_LIMIT:-1024}
+    init: true
     mem_limit: ${OPENCODE_MEMORY:-20g}
     memswap_limit: ${OPENCODE_MEMORY_SWAP:-28g}
     cpus: ${OPENCODE_CPUS:-12}

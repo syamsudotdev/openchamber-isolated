@@ -333,6 +333,8 @@ security_opt:
   - no-new-privileges:true
 ```
 
+`init: true` runs Docker's init process as PID 1. It reaps ended child processes, so zombie processes do not fill `pids_limit`.
+
 The root filesystem remains read-only. Docker named volumes make `/home/node` and `/opt/android-sdk` writable. The container uses temporary filesystems for `/tmp` and `/run`. Other `/opt` tools remain read-only. It uses bind mounts for the plugin cache, workspace, OpenCode configuration, and OpenCode data. The plugin cache and SDK volume permit downloaded code to run.
 
 ## Update Versions
