@@ -268,7 +268,7 @@ Known snapshot limitations remain. The vendored codemap script mishandles `.giti
 
 ### Bundled Command-Line Tools
 
-The image uses Node.js 26 LTS on Debian 13 (trixie) through `node:26-trixie-slim`. The tag names the Debian release, so a later Debian release does not change the base without an edit. The image pins OpenChamber 2.8.0 (`@openchamber/web`) and OpenCode 2.3.2 (`@opencode/cli`). Each build installs the latest npm releases of Playwright and Quint (`@informalsystems/quint`). The build arguments `PLAYWRIGHT_VERSION` and `QUINT_VERSION` default to `latest`; an exact value in `--build-arg QUINT_VERSION=<version>` selects that version. npm verifies each package against the registry integrity hash. The build records each installed version in `/usr/local/share/image-versions.txt` and prints that file. The build requires Node >=24.14.0 before npm installation. The npm install allows the install scripts of `@opencode/cli` and `node-pty` explicitly through `--allow-scripts`.
+The image uses Node.js 26 LTS on Debian 13 (trixie) through `node:26-trixie-slim`. The tag names the Debian release, so a later Debian release does not change the base without an edit. The image pins OpenChamber 2.8.0 (`@openchamber/web`) and OpenCode 2.4.0 (`@opencode/cli`). Each build installs the latest npm releases of Playwright and Quint (`@informalsystems/quint`). The build arguments `PLAYWRIGHT_VERSION` and `QUINT_VERSION` default to `latest`; an exact value in `--build-arg QUINT_VERSION=<version>` selects that version. npm verifies each package against the registry integrity hash. The build records each installed version in `/usr/local/share/image-versions.txt` and prints that file. The build requires Node >=24.14.0 before npm installation. The npm install allows the install scripts of `@opencode/cli` and `node-pty` explicitly through `--allow-scripts`.
 
 The system Python is 3.13 on Debian 13. A virtual environment created with the Debian 12 system Python 3.11, such as a `uv tool` environment, does not work after an upgrade from a Debian 12 image. Recreate it, for example with `uv tool install --reinstall <tool>`. Libraries that were extracted from Debian 12 packages into the home volume can also fail; install the matching Debian 13 package instead. The image installs the latest releases of `uv` and `uvx`, RTK OSS, `fff-mcp`, GitHub CLI `gh`, and `gitleaks` in `/usr/local/bin`. `install-tools.sh` supports release assets for Docker `TARGETARCH=amd64` or `arm64`, but the complete image accepts only `amd64` because of the Android SDK. The variables `UV_VERSION`, `RTK_VERSION`, `FFF_VERSION`, `GH_VERSION`, and `GITLEAKS_VERSION` default to `latest`; an exact value without a leading `v` selects that release.
 
@@ -342,7 +342,7 @@ The root filesystem remains read-only. Docker named volumes make `/home/node` an
 The `Dockerfile` pins OpenCode and OpenChamber to exact versions:
 
 ```dockerfile
-ARG OPENCODE_VERSION=2.3.2
+ARG OPENCODE_VERSION=2.4.0
 ARG OPENCHAMBER_VERSION=2.8.0
 ```
 
