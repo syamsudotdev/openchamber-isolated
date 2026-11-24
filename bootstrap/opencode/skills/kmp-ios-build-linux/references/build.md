@@ -22,6 +22,7 @@ The default deliverable is a signed development IPA; unsigned output alone compl
 ## Gate settings and one-liners
 
 `scripts/preflight.sh` and `scripts/build.sh` read `<GATE>/gate.env`. It holds paths and names only. Never put a password or key in it.
+The preflight reads the machine record first (`${KMP_IOS_RECORD:-${XDG_DATA_HOME:-$HOME/.local/share}/kmp-ios-toolchain/env.sh}`), which supplies the shared toolchain root, `XTOOL_HOME`, `XTOOL_XDG_CONFIG_HOME`, `KMP_IOS_SDK`, `OBJDUMP` and the library path; a value in `gate.env` overrides it. One Darwin SDK per machine means no gate installs its own.
 
 ```sh
 PROJECT=<KMP checkout in the gate>
@@ -35,7 +36,7 @@ SWIFT_BIN=<Swift distribution usr/bin>
 SDK_TOOLSET_BIN=<SDK toolset bin, for dsymutil>
 TOOL_LD_LIBRARY_PATH=<setup's library path for Swift and xtool, if any>
 XTOOL=<xtool path>
-XTOOL_HOME=<HOME that holds xtool's SDK>
+XTOOL_HOME=<shared HOME that holds the Darwin SDK, from the machine record>
 XTOOL_XDG_CONFIG_HOME=<setup's XDG_CONFIG_HOME, if xtool needs it>
 OBJDUMP=<llvm-objdump path>
 ZIP=<setup-verified zip, if not on PATH>
@@ -46,7 +47,7 @@ SIGN_STAGE_ROOT=<optional tmpfs staging root>
 DEVTOOLS=<folder with bin/idevice_id and bin/ideviceinfo>  USBMUXD_SOCKET=<device relay socket>
 ```
 
-The preflight checks, in one run: the project and `gradlew`, Java, running Gradle commands (fail) and idle daemons (warning), the port evidence, swift, xtool and its Darwin SDK, `unzip`, `zip`, `openssl`, `python3`, the Mach-O inspector, zsign v1.1.3, the owner, mode, folder and Git status of the `.p12` and the password file (never their contents), the entitlements file, a tmpfs staging root, the profile's public metadata (development type, `get-task-allow`, expiry, App ID, UDID), and the device route with Developer Mode.
+The preflight checks, in one run: the project and `gradlew`, Java, running Gradle commands (fail) and idle daemons (warning), the three [Gradle settings for the Linux port](#gradle-settings-for-the-linux-port) in `GRADLE_ARGS`, the `FRAMEWORK_BUILD_CMD` script, `gradle.properties` or the build scripts, the machine record and the shared Darwin SDK, the port evidence, swift, xtool and its Darwin SDK, `unzip`, `zip`, `openssl`, `python3`, the Mach-O inspector, zsign v1.1.3, the owner, mode, folder and Git status of the `.p12` and the password file (never their contents), the entitlements file, a tmpfs staging root, the profile's public metadata (development type, `get-task-allow`, expiry, App ID, UDID), and the device route with Developer Mode.
 
 Tested on 2026-11-18 against a private KMP app checkout in `<GATE>/app-src`: one run found an idle Gradle daemon (warning), the missing port record, the SDK state for xtool 1.22.2, and each missing signing input.
 
@@ -66,11 +67,47 @@ Select the inspected KMP checkout.
 ```
 Run the actual Release framework task only after the preceding qualification gate; replace the example task with the project's task.
 
+Set the [Gradle settings for the Linux port](#gradle-settings-for-the-linux-port) before this task.
+
 Retain the build log, compiler/plugin versions, link arguments, and actual output path.
 Require an executed task, nonempty iOS variant dependencies, and the actual Compose compiler and cinterop inputs where used.
 Check that the output contains compiled implementations of the expected exported Kotlin APIs, not only declarations.
 Run resource generation/sync tasks selected from this project's configuration.
 Finish with a real static device framework and its generated resources.
+
+### Gradle settings for the Linux port
+
+Kotlin Gradle Plugin 2.4.20 with the qualified port needs three settings. The preflight fails when one is missing.
+
+| Setting | Failure without it |
+| --- | --- |
+| `kotlin.native.binary.enableDebugTransparentStepping=false` | The link task aborts: `DebugInfoC.cpp:96: ... DICreateFunctionShared(...): Assertion 'false' failed`, then `finished with non-zero exit value 134`. When the compiler runs inside the Gradle daemon (the default), the daemon dies instead: `Gradle build daemon disappeared unexpectedly`. |
+| `kotlin.native.toolchain.enabled=false` | `:downloadKotlinNativeDistribution` fails: `Error while evaluating property '...kotlinNativeDependencies'`, `java.lang.NullPointerException` at `AppleConfigurablesImpl.<init>(Apple.kt:32)`. The plugin reads `konan.properties` without the port's overrides. |
+| `-Xoverride-konan-properties=targetToolchain.linux_x64-ios_arm64=<root>/linux-toolchain;additionalToolsDir.linux_x64=<root>/linux-toolchain` on the iOS binaries | The link task fails: `e: Compilation failed: null`, `java.lang.NullPointerException`. |
+
+Pass the two properties in `GRADLE_ARGS` so that no project file changes, or put them in the gate's `gradle.properties`; both forms passed. Set `kotlin.native.home=<KONAN_HOME>` in the gate's `gradle.properties` (the tested form).
+
+```sh
+GRADLE_ARGS="-Pkotlin.native.toolchain.enabled=false -Pkotlin.native.binary.enableDebugTransparentStepping=false"
+```
+
+A `binaryOption("enableDebugTransparentStepping", "false")` call in the `binaries.framework { }` block is the build-script form; it is not tested in Gradle. No Gradle property was found for the compiler argument, so the override goes in the build script of the gate copy:
+
+```kotlin
+iosArm64 {
+    binaries.framework {
+        freeCompilerArgs += "-Xoverride-konan-properties=" +
+            "targetToolchain.linux_x64-ios_arm64=<root>/linux-toolchain;" +
+            "additionalToolsDir.linux_x64=<root>/linux-toolchain"
+    }
+}
+```
+
+Run Gradle with the port agent from the machine record in `JAVA_TOOL_OPTIONS` (setup's toolchain manifest, section 6), `KONAN_DATA_DIR=<root>/konan-data`, `KONAN_USE_INTERNAL_SERVER=0`, and a `GRADLE_USER_HOME` inside the gate. Put these in a reviewed `FRAMEWORK_BUILD_CMD` script, because the default branch of `build.sh` does not pass them. The Gradle daemon and every compiler JVM inherit the agent, and each log shows `PROBE3: enabled IOS_ARM64 only`.
+To see the compiler's own stderr and exit code, add `-Pkotlin.native.disableCompilerDaemon=true` for that run; it runs the compiler in a separate JVM.
+To confirm the option reaches the compiler, add `-Pkotlin.internal.compiler.arguments.log.level=warning` and require `-Xbinary=enableDebugTransparentStepping=false` in the log.
+
+Evidence (2026-11-24, Kotlin/Native 2.4.20 Linux port, Gradle 9.6.0, Temurin 25, a minimal KMP library with one `iosArm64` static framework, one common function and one iOS class that uses UIKit): without the binary option, `:linkReleaseFrameworkIosArm64` aborted with exit value 134. With it, all four tasks executed under `--rerun-tasks` in 11 s, and the framework passed the archive inspector (`regular Darwin archive; bounded device ARM64 objects`), with both exported methods in `Headers/Probe.h` and `iPhoneOS` in `Info.plist`. The `gradle.properties` form and the `-P` form both passed. A full application build with these settings is not yet tested.
 
 ### Rebuild a new revision
 

@@ -1,0 +1,2 @@
+Premain-Class: ProbeAgent
+Can-Retransform-Classes: true

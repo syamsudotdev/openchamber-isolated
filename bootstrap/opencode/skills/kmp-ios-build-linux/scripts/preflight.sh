@@ -7,21 +7,38 @@
 # Exit 0 when no check fails; warnings do not fail.
 set -uo pipefail
 GATE=${1:?usage: preflight.sh <GATE>}
+SKILL=$(cd "$(dirname "$0")/.." && pwd)
+SETUP=$(cd "$SKILL/.." && pwd)/kmp-ios-setup-linux
 fails=0 warns=0
 pass() { printf 'PASS  %s\n' "$1"; }
 fail() { printf 'FAIL  %s\n' "$1"; fails=$((fails + 1)); }
 warn() { printf 'WARN  %s\n' "$1"; warns=$((warns + 1)); }
 skip() { printf 'SKIP  %s\n' "$1"; }
 
+# Machine record first: it holds the shared toolchain root and Darwin SDK, so a
+# later project does not install the tools again (setup step 0). gate.env then
+# overrides any path this build pins.
+RECORD=${KMP_IOS_RECORD:-${XDG_DATA_HOME:-$HOME/.local/share}/kmp-ios-toolchain/env.sh}
+if [ -r "$RECORD" ]; then
+    # shellcheck disable=SC1090,SC1091
+    . "$RECORD"
+    record=1
+    SDK_TOOLSET_BIN=${SDK_TOOLSET_BIN:-${KMP_IOS_SDK:+$KMP_IOS_SDK/toolset/bin}}
+else
+    record=0
+fi
 [ -r "$GATE/gate.env" ] || { echo "FAIL  $GATE/gate.env is missing"; exit 1; }
 # shellcheck disable=SC1091
 . "$GATE/gate.env"
+if [ "$record" -eq 1 ]; then pass "machine record: $RECORD"; else
+    warn "no machine record at $RECORD: run kmp-ios-setup-linux scripts/setup-toolchain-root.sh (setup step 0)"
+fi
 for v in PROJECT SWIFT_BIN XTOOL XTOOL_HOME; do
-    [ -n "${!v:-}" ] || fail "gate.env: $v is not set"
+    [ -n "${!v:-}" ] || fail "gate.env: $v is not set and the record has no value"
 done
 [ "$fails" -eq 0 ] || { echo "RESULT: $fails failed, $warns warnings"; exit 1; }
 RUN=(env -i HOME="$XTOOL_HOME" CFFIXED_USER_HOME="$XTOOL_HOME" LANG=C.UTF-8 PATH="$SWIFT_BIN:/usr/bin:/bin"
-    LD_LIBRARY_PATH="${TOOL_LD_LIBRARY_PATH:-}" ${XTOOL_XDG_CONFIG_HOME:+XDG_CONFIG_HOME=$XTOOL_XDG_CONFIG_HOME})
+    LD_LIBRARY_PATH="${TOOL_LD_LIBRARY_PATH:-${KMP_IOS_LD_LIBRARY_PATH:-}}" ${XTOOL_XDG_CONFIG_HOME:+XDG_CONFIG_HOME=$XTOOL_XDG_CONFIG_HOME})
 
 # Project and Gradle
 [ -d "$PROJECT" ] && pass "project: $PROJECT" || fail "project folder missing: $PROJECT"
@@ -30,29 +47,46 @@ if [ -n "${JAVA_HOME_FOR_BUILD:-}" ]; then
     v=$("$JAVA_HOME_FOR_BUILD/bin/java" -version 2>&1 | head -1) && pass "java: $v" || fail "java does not run: $JAVA_HOME_FOR_BUILD"
 else warn "gate.env: JAVA_HOME_FOR_BUILD not set; the build uses the default java"; fi
 procs=$(for p in /proc/[0-9]*; do tr '\0' ' ' < "$p/cmdline" 2>/dev/null; echo; done | grep -v grep)
-busy=$(printf '%s\n' "$procs" | grep -c -E 'gradlew|GradleWrapperMain')
+busy=$(printf '%s\n' "$procs" | grep -c -E '^[^ ]*/java .*(GradleWrapperMain|gradle-wrapper\.jar)')
 idle=$(printf '%s\n' "$procs" | grep -c 'GradleDaemon')
 [ "$busy" -eq 0 ] && pass "no Gradle command running" || fail "$busy Gradle command(s) running: wait, one Gradle command at a time"
 [ "$idle" -eq 0 ] || warn "$idle Gradle daemon(s) alive (idle daemons share memory with the build)"
 if [ -n "${PORT_EVIDENCE:-}" ]; then
     [ -r "$PORT_EVIDENCE" ] && pass "port qualification evidence: $PORT_EVIDENCE" || fail "port qualification evidence missing: $PORT_EVIDENCE"
 else fail "gate.env: PORT_EVIDENCE not set (setup's qualified Kotlin/Native port record)"; fi
+# Gradle settings of the Linux port (references/build.md, Gradle settings for the Linux port).
+# Look in GRADLE_ARGS, the gate's build command, gradle.properties and the build scripts.
+port_settings=$(
+    printf '%s\n' "${GRADLE_ARGS:-}"
+    [ -r "${FRAMEWORK_BUILD_CMD:-}" ] && cat "$FRAMEWORK_BUILD_CMD"
+    find "$PROJECT" -maxdepth 3 \( -name build -o -name .gradle -o -name gradle-home \) -prune -o \
+        \( -name gradle.properties -o -name '*.gradle.kts' -o -name '*.gradle' \) -type f -print0 2>/dev/null | xargs -0 -r cat 2>/dev/null)
+port_setting() { # regex text
+    printf '%s\n' "$port_settings" | grep -v '^ *//' | grep -qE "$1" && pass "Gradle port setting: $2" \
+        || fail "Gradle port setting missing: $2 (references/build.md, Gradle settings for the Linux port)"
+}
+port_setting 'enableDebugTransparentStepping"?[ ,=]+"?false' 'kotlin.native.binary.enableDebugTransparentStepping=false (else the link aborts in DebugInfoC.cpp:96, exit 134)'
+port_setting 'kotlin\.native\.toolchain\.enabled=false' 'kotlin.native.toolchain.enabled=false (else downloadKotlinNativeDistribution fails with a NullPointerException)'
+port_setting 'targetToolchain\.linux_x64-ios_arm64=' '-Xoverride-konan-properties with targetToolchain.linux_x64-ios_arm64 (else the link fails with a NullPointerException)'
 
 # Swift, xtool, SDK
 v=$("${RUN[@]}" swift --version 2>&1 | head -1) && pass "swift: $v" || fail "swift does not run: $v"
 v=$("${RUN[@]}" "$XTOOL" --version 2>&1 | tail -1) && pass "xtool: $v" || fail "xtool does not run: $v"
 s=$("${RUN[@]}" "$XTOOL" sdk status 2>&1)
 case "$s" in
-*"out of date"*) fail "Darwin SDK is out of date for this xtool: run 'xtool sdk install <Xcode.xip> --slim' with HOME=$XTOOL_HOME" ;;
+*"out of date"*) fail "Darwin SDK is out of date for this xtool: reinstall the shared SDK with bash ${SETUP:-<kmp-ios-setup-linux>}/scripts/install-sdk.sh <Xcode.xip>, or with the 2.x xtool that this build needs" ;;
 *"Darwin SDK is installed"*) pass "Darwin SDK: $(printf '%s' "$s" | grep -m1 Version | sed 's/^ *//')" ;;
-*) fail "no Darwin SDK under $XTOOL_HOME" ;;
+*) fail "no shared Darwin SDK under $XTOOL_HOME: run bash ${SETUP:-<kmp-ios-setup-linux>}/scripts/install-sdk.sh <Xcode.xip> (setup step 4)" ;;
 esac
+[ -n "${KMP_IOS_SDK:-}" ] && [ -d "${KMP_IOS_SDK:-}" ] \
+    && pass "shared SDK bundle: $KMP_IOS_SDK" \
+    || fail "shared Darwin SDK missing (KMP_IOS_SDK unset or absent in $RECORD): run bash ${SETUP:-<kmp-ios-setup-linux>}/scripts/install-sdk.sh <Xcode.xip> (setup step 4)"
 for t in unzip openssl python3; do
     p=$(command -v "$t") && pass "$t: $p" || fail "$t not found"
 done
-p=${ZIP:-$(command -v zip)}
+p=${ZIP:-${KMP_IOS_ZIP:-$(command -v zip)}}
 [ -n "$p" ] && [ -x "$p" ] && pass "zip: $p" || fail "zip not found (set ZIP to the setup-verified binary)"
-[ -n "${OBJDUMP:-}" ] && [ -x "$OBJDUMP" ] && pass "Mach-O inspector: $OBJDUMP" || fail "gate.env: OBJDUMP (llvm-objdump path) missing or not executable"
+[ -n "${OBJDUMP:-}" ] && [ -x "$OBJDUMP" ] && pass "Mach-O inspector: $OBJDUMP" || fail "OBJDUMP (llvm-objdump path) missing or not executable: record it with setup scripts/record-component.sh --env OBJDUMP"
 
 # Signer and signing inputs (paths, modes and owners only)
 if [ -n "${ZSIGN:-}" ]; then

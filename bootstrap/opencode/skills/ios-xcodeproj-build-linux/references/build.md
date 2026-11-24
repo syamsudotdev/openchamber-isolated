@@ -14,7 +14,7 @@ Each shell block is one command. Stop on failure. Long commands write their full
 | Tool | Pinned version | Source and trust record | Check |
 |---|---|---|---|
 | Swift toolchain | from setup (6.4.1 on the last run) | `kmp-ios-setup-linux` handoff | `swift --version` |
-| Darwin Swift SDK | made by the pinned xtool | `<XTOOL> sdk install <Xcode.xip> --slim` with `HOME=<GATE>/home`; record the `.xip` SHA256. An SDK made by xtool 1.x is rejected by 2.0 ("Darwin SDK is out of date"), and a slim SDK cannot be updated in place. | `<XTOOL> sdk status` |
+| Darwin Swift SDK | made by the pinned xtool | the machine's one shared SDK at `$KMP_IOS_SDK` from the record, made by `kmp-ios-setup-linux/scripts/install-sdk.sh <Xcode.xip>` with the xtool 2.x that this build needs; record the `.xip` SHA256. An SDK made by xtool 1.x is rejected by 2.0 ("Darwin SDK is out of date"), and a slim SDK cannot be updated in place. | `<XTOOL> sdk status` |
 | xtool | **2.0.0-beta.1** (prerelease) | `https://github.com/xtool-org/xtool/releases/download/2.0.0-beta.1/xtool-x86_64.AppImage`, 67,799,544 bytes, SHA256 `0361a2570e46a7734e8bafa71715ca8a72cf218e0e7a945eef0e4d71733b19e3` (GitHub release API, 2026-11-18). Extract with `--appimage-extract`; no FUSE. | `<XTOOL> --version` |
 | XcodeGen | **2.47.0**, built from source | tag `2.47.0`, commit `8f1f80bb912df5fa1c732f96dadbdff14005056e`. The release zips are macOS binaries. Build with `swift build -c release --product xcodegen --build-system native`: the default Swift Build system drops `LD_LIBRARY_PATH` in its link step, and `swiftc` then cannot load `libncurses.so.6` from the setup's `deps/` (2026-11-18). | `xcodegen --version` |
 | dsymutil | Darwin SDK toolset | `<SDK>/toolset/bin/dsymutil` | `dsymutil --version` |
@@ -35,12 +35,13 @@ env -i HOME=<GATE>/home CFFIXED_USER_HOME=<GATE>/home TMPDIR=<GATE>/tmp LANG=C.U
 
 - Do not source a setup `env.sh` that sets `SWIFT_EXEC` to a wrapper for host builds: SwiftPM then searched for `swiftc` in the package folder and failed (2026-11-18).
 - `USER` and `LOGNAME` are required: XcodeGen stops with `Couldn't find current username` without them. `CFFIXED_USER_HOME` makes Foundation use the gate `HOME`.
-- xtool reads its Darwin SDK and any saved login under `HOME`. With `HOME=<GATE>/home`, the gate's own SDK is used and no login token is present. A login token is a secret: never print that folder.
+- xtool reads its Darwin SDK and any saved login under `HOME`. With `HOME` set to the record's `XTOOL_HOME`, the shared machine SDK is used and no login token is present. A login token is a secret: never print that folder.
 - The device commands need `USBMUXD_SOCKET_ADDRESS` from the device route.
 
 ### 1.2 Gate settings and one-liners
 
-`scripts/preflight.sh` and `scripts/build.sh` read `<GATE>/gate.env`. It holds paths and names only, never a secret:
+`scripts/preflight.sh` and `scripts/build.sh` read `<GATE>/gate.env`. It holds paths and names only, never a secret.
+The preflight reads the machine record first (`${KMP_IOS_RECORD:-${XDG_DATA_HOME:-$HOME/.local/share}/kmp-ios-toolchain/env.sh}`) and takes `KMP_IOS_SDK` and the shared `XTOOL_HOME` from it; a value in `gate.env` overrides it:
 
 ```sh
 TC=<toolchain root>
@@ -57,7 +58,7 @@ USBMUXD_SOCKET=<device relay socket>           # optional, install step
 
 The stand-ins are installed into `<GATE>/stub-bin/` (`actool`, `ibtool`, `ld`, `lipo`, `asset_symbols.py`); the preflight fails when they differ from the skill's copies.
 
-The preflight checks, in one run of about 1 second: swift, xtool 2.x, the Darwin SDK (present and accepted by this xtool), XcodeGen, `dsymutil`, `zip`, `rsync`, the stand-ins, the applied overlay, a project generated after the last `project.yml` change, macOS-only calls left in `project.yml`, `@State static` in compiled sources, stale empty symbol files, asset-symbol coverage of the app and of each local package, the device route and the free disk space.
+The preflight checks, in one run of about 1 second: swift, xtool 2.x, the machine record, the shared Darwin SDK (present and accepted by this xtool), XcodeGen, `dsymutil`, `zip`, `rsync`, the stand-ins, the applied overlay, a project generated after the last `project.yml` change, macOS-only calls left in `project.yml`, `@State static` in compiled sources, stale empty symbol files, asset-symbol coverage of the app and of each local package, the device route and the free disk space.
 
 ## 2. Gate and source export
 

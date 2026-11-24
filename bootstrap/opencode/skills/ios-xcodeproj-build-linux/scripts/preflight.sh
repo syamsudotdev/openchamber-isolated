@@ -6,10 +6,23 @@
 set -uo pipefail
 GATE=${1:?usage: preflight.sh <GATE>}
 SKILL=$(cd "$(dirname "$0")/.." && pwd)
+SETUP=$(cd "$SKILL/.." && pwd)/kmp-ios-setup-linux
 fails=0 warns=0
 pass() { printf 'PASS  %s\n' "$1"; }
 fail() { printf 'FAIL  %s\n' "$1"; fails=$((fails + 1)); }
 warn() { printf 'WARN  %s\n' "$1"; warns=$((warns + 1)); }
+
+# Machine record first: it holds the shared toolchain root and the one Darwin
+# SDK, so this gate opens the SDK that setup made instead of building another
+# (setup step 0). gate.env then overrides any path this build pins.
+RECORD=${KMP_IOS_RECORD:-${XDG_DATA_HOME:-$HOME/.local/share}/kmp-ios-toolchain/env.sh}
+record=0
+if [ -r "$RECORD" ]; then
+    # shellcheck disable=SC1090,SC1091
+    . "$RECORD"
+    record=1
+    TC=${TC:-${KMP_IOS_TOOLCHAIN_ROOT:-}}
+fi
 
 if [ ! -r "$GATE/gate.env" ]; then
     echo "FAIL  $GATE/gate.env is missing"; exit 1
@@ -17,12 +30,17 @@ fi
 # shellcheck disable=SC1091
 . "$GATE/gate.env"
 for v in TC SWIFT_BIN XTOOL XCODEGEN SCHEME CONFIG RUN_USER APP_SOURCES; do
-    [ -n "${!v:-}" ] || fail "gate.env: $v is not set"
+    [ -n "${!v:-}" ] || fail "gate.env: $v is not set and the record has no value"
 done
 [ "$fails" -eq 0 ] || { echo "RESULT: $fails failed, $warns warnings"; exit 1; }
 
-SDK="$GATE/home/.config/xtool/darwin.xtoolsdk"
-RUN=(env -i HOME="$GATE/home" CFFIXED_USER_HOME="$GATE/home" TMPDIR="$GATE/tmp" LANG=C.UTF-8
+[ "$record" -eq 1 ] && pass "machine record: $RECORD" || warn "no machine record at $RECORD: run kmp-ios-setup-linux scripts/setup-toolchain-root.sh (setup step 0)"
+SDK=${KMP_IOS_SDK:-}
+if [ -n "$SDK" ] && [ -d "$SDK" ]; then pass "shared SDK bundle: $SDK"; else
+    fail "shared Darwin SDK missing (KMP_IOS_SDK unset or absent): run bash $SETUP/scripts/install-sdk.sh <Xcode.xip> (setup step 4)"
+    SDK=$GATE/home/.config/xtool/darwin.xtoolsdk
+fi
+RUN=(env -i HOME="${XTOOL_HOME:-$GATE/home}" CFFIXED_USER_HOME="${XTOOL_HOME:-$GATE/home}" TMPDIR="$GATE/tmp" LANG=C.UTF-8
     USER="$RUN_USER" LOGNAME="$RUN_USER" PATH="$GATE/stub-bin:$SWIFT_BIN:$SDK/toolset/bin:$GATE/deps/root/usr/bin:/usr/bin:/bin"
     LD_LIBRARY_PATH="$TC/deps/lib/x86_64-linux-gnu:$TC/deps/usr/lib/x86_64-linux-gnu:$GATE/deps/root/usr/lib/x86_64-linux-gnu")
 
@@ -32,9 +50,9 @@ v=$("${RUN[@]}" "$XTOOL" --version 2>&1 | tail -1)
 case "$v" in "xtool 2."*) pass "xtool: $v" ;; *) fail "xtool must be 2.x for Xcode projects, got: $v" ;; esac
 s=$("${RUN[@]}" "$XTOOL" sdk status 2>&1)
 case "$s" in
-*"out of date"*) fail "Darwin SDK is out of date for this xtool: run 'xtool sdk install <Xcode.xip> --slim' with HOME=$GATE/home" ;;
+*"out of date"*) fail "Darwin SDK is out of date for this xtool: reinstall the shared SDK with bash $SETUP/scripts/install-sdk.sh <Xcode.xip> and the xtool 2.x that this build needs" ;;
 *"Darwin SDK is installed"*) pass "Darwin SDK: $(printf '%s' "$s" | grep -m1 Version | sed 's/^ *//')" ;;
-*) fail "no Darwin SDK under $GATE/home: run 'xtool sdk install <Xcode.xip> --slim'" ;;
+*) fail "no shared Darwin SDK under ${XTOOL_HOME:-$GATE/home}: run bash $SETUP/scripts/install-sdk.sh <Xcode.xip> (setup step 4)" ;;
 esac
 v=$("${RUN[@]}" "$XCODEGEN" --version 2>&1 | tail -1) && pass "xcodegen: $v" || fail "xcodegen does not run: $v"
 for t in dsymutil zip rsync; do

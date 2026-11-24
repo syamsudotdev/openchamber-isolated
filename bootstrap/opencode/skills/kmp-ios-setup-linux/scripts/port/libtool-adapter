@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# libtool adapter for the Darwin static-archive step of the Kotlin/Native
+# iOS ARM64 linker on Linux.
+#
+# Accepted shape (the only shape the compiler emits for a static framework):
+#   libtool -D -static -o <out.a> <inputs...> -arch_only arm64
+# where an input is a flat `.o`, a regular Darwin `.a`, or a universal (FAT)
+# `.a`. A FAT input is reduced to its baseline ARM64 subtype-0 slice first.
+# Every member is checked by port/inspect-archive.cjs before it reaches llvm-ar.
+#
+# Paths come from the machine record, not from this file: the installed copy
+# lives at <root>/linux-toolchain/bin/libtool, so <root> is derived from it, and
+# <root>/env.sh is sourced when it exists.
+#   LLVM_AR            llvm-ar to run (default: the recorded LLVM bin dir)
+#   KMP_IOS_ARCHIVER_LOG  optional command log; no log when unset
+set -euo pipefail
+SELF=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$SELF/../.." && pwd)
+# shellcheck disable=SC1091
+if [ -r "$ROOT/env.sh" ]; then . "$ROOT/env.sh"; fi
+LLVM_AR=${LLVM_AR:-${LLVM_BIN:-$ROOT/konan-data/dependencies/llvm-21-x86_64-linux-essentials-116/bin}/llvm-ar}
+INSPECTOR=${KMP_IOS_ARCHIVE_INSPECTOR:-$ROOT/port/inspect-archive.cjs}
+SLICER=${KMP_IOS_SLICER:-$ROOT/port/select-slice.cjs}
+SCRATCH_PARENT=${KMP_IOS_ADAPTER_TMP:-$ROOT/tmp}
+LOG=${KMP_IOS_ARCHIVER_LOG:-}
+
+die() { printf 'libtool: %s\n' "$*" >&2; exit 1; }
+
+# Parse flags in any order; the compiler has emitted -arch_only before and
+# after the inputs across versions. Only these flags are accepted.
+output=""; static=0; dynamic=0; arch=0; inputs=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -D) dynamic=1; shift ;;
+        -static) static=1; shift ;;
+        -o) output=${2:-}; [ -n "$output" ] || die "-o needs a path"; shift 2 ;;
+        -arch_only) [ "${2:-}" = arm64 ] || die "-arch_only must be arm64"; arch=1; shift 2 ;;
+        -filelist) [ -n "${2:-}" ] && [ -r "${2:-}" ] || die "-filelist needs a readable file"
+                   while IFS= read -r entry; do [ -n "$entry" ] && inputs+=("$entry"); done < "$2"; shift 2 ;;
+        -*) die "unsupported flag: $1" ;;
+        *) inputs+=("$1"); shift ;;
+    esac
+done
+[ "$dynamic" -eq 1 ] && [ "$static" -eq 1 ] && [ "$arch" -eq 1 ] && [ -n "$output" ] \
+    || die "unsupported invocation; expected -D -static -o <out> <inputs> -arch_only arm64"
+[ "${#inputs[@]}" -gt 0 ] || die "no inputs"
+
+mkdir -p "$SCRATCH_PARENT" "$(dirname "$output")"
+scratch=$(mktemp -d "$SCRATCH_PARENT/archive.XXXXXX")
+trap 'rm -rf -- "$scratch"' EXIT
+[ -x "$LLVM_AR" ] || die "llvm-ar is missing or not executable: $LLVM_AR"
+command -v node >/dev/null 2>&1 || die "node is required to check archive members"
+[ -r "$INSPECTOR" ] || die "archive inspector is missing: $INSPECTOR"
+[ -r "$SLICER" ] || die "slice selector is missing: $SLICER"
+
+resolved=()
+index=0
+for input in "${inputs[@]}"; do
+    case "$input" in
+        *.o) [ -f "$input" ] || die "object input is missing: $input"; resolved+=("$input") ;;
+        *.a)
+            [ -f "$input" ] || die "archive input is missing: $input"
+            magic=$(od -An -tx1 -N4 --endian=big "$input" 2>/dev/null | tr -d ' \n')
+            case "$magic" in
+                cafebabe|bfbafeca|cafebabf)
+                    index=$((index + 1))
+                    flat=$scratch/flat-$index.a
+                    node "$SLICER" "$INSPECTOR" "$input" "$flat" || die "unsupported universal archive: $input"
+                    node "$INSPECTOR" "$flat" >/dev/null || die "flattened archive failed inspection: $input"
+                    resolved+=("$flat") ;;
+                *)
+                    node "$INSPECTOR" "$input" >/dev/null || die "unsupported archive input: $input"
+                    resolved+=("$input") ;;
+            esac ;;
+        *) die "unsupported input type: $input" ;;
+    esac
+done
+
+if [ -n "$LOG" ]; then
+    mkdir -p "$(dirname "$LOG")"
+    { printf 'llvm-ar --format=darwin rcsD %q ' "$output"; printf '%q ' "${resolved[@]}"; printf '\n'; } >> "$LOG"
+fi
+exec "$LLVM_AR" --format=darwin rcsD "$output" "${resolved[@]}"

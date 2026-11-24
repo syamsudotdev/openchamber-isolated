@@ -4,6 +4,8 @@ Use this Debian-first baseline with the workflow in `../SKILL.md`.
 The complete fresh Debian procedure is not clean-room tested. The pinned tools and SDK interfaces were used in a configured Linux environment; the package baseline is conservative, not a proven minimum.
 Pins are Swift `6.4.1`, xtool `1.22.2`, and an authorized Xcode `27` SDK input. Confirm project compatibility before adopting them.
 Resolve every example path to the actual workspace before execution. `/home/iosbuilder` is an example, not a required user.
+The example prefix `/home/iosbuilder/ios-linux` stands for the machine root that `bash scripts/setup-toolchain-root.sh` chooses; use the real `<root>` from `env.sh`, not the example.
+Every component, its official URL and its integrity value are listed in [the machine toolchain manifest](toolchain-manifest.md).
 Run commands individually and stop on errors. Obtain approval for the resolved changes before execution.
 
 ## 1. Prepare Debian dependencies
@@ -41,17 +43,20 @@ Install these optional development packages only when native dependencies requir
 mkdir -p /home/iosbuilder/ios-linux/tools /home/iosbuilder/ios-linux/downloads /home/iosbuilder/ios-linux/inputs
 ```
 
-Create the resolved workspace directories.
+Create the resolved workspace directories under the machine root.
 
 ### Read-only or non-root container
 
 `apt-get install` is unavailable when the root filesystem is read-only or you are not root. Extract authenticated packages into a writable, persistent scratch tree instead:
 
-1. Download the suite's `InRelease` and authenticate it with the verifier the release's apt uses: `gpgv --keyring /usr/share/keyrings/debian-archive-keyring.gpg` on Bookworm, and `sqv` on Trixie, where `gpgv` may be absent. Prove the check can fail by verifying a copy with one changed byte.
+1. Download the suite's `InRelease` and authenticate it with the verifier the host's apt uses: `gpgv --keyring /usr/share/keyrings/debian-archive-keyring.gpg` on Bookworm, and `sqv --keyring /usr/share/keyrings/debian-archive-keyring.pgp --cleartext` on Trixie, where `gpgv` may be absent. A Trixie keyring also holds the Bookworm keys, so `sqv` authenticates Bookworm suites too. Prove the check can fail by verifying a copy with one changed byte.
 2. Check the `Packages.xz` SHA256 and size against the authenticated `InRelease`, then each `.deb` SHA256 and size against its `Packages` record. Check `-updates` and `-security` for newer versions.
 3. Resolve every runtime library from the packages' `Depends` and fetch only the ones the image lacks (`ldconfig -p`).
 4. Extract with `dpkg-deb --extract` into the scratch root; run no maintainer scripts.
 5. Add wrapper scripts that set `LD_LIBRARY_PATH` to the extracted library directories and run the extracted binary with `"$@"`. Require no `not found` entries from `ldd` in that environment.
+
+`scripts/fetch-debs.py` does steps 1 to 4 with `sqv`; the commands for C12 to C14, C20 and C21 are in [the manifest](toolchain-manifest.md#signing-packaging-project-generator-and-device-tools).
+On a Debian 13 host the Debian 12 Swift build runs with the C12 to C14 libraries; among the ELF files in `usr/bin`, only `lldb` and `lldb-dap` report `libpython3.11.so.1.0 => not found`, and the build uses neither.
 
 Keep large downloads and caches on disk-backed storage; a memory-backed location when available, such as `$XDG_RUNTIME_DIR` or `/dev/shm`, is for short-lived secrets, not toolchains.
 
@@ -111,6 +116,14 @@ gpg --batch --status-fd=1 --verify /home/iosbuilder/ios-linux/downloads/swift-6.
 ```
 
 Require exit zero, `Good signature`, and `VALIDSIG` identifying the expected primary fingerprint. A trust warning is not a signature failure; a hash alone does not authenticate the publisher.
+
+When `gpg` is absent (a Debian 13 container has `sqv` but no `gpg` or `gpgv`), use `sqv` with a keyring that holds only the downloaded key, instead of the three `gpg` commands above:
+
+```sh
+sqv -v --keyring /home/iosbuilder/ios-linux/downloads/release-key-swift-6.x.asc --signature-file /home/iosbuilder/ios-linux/downloads/swift-6.4.1-debian12.tar.gz.sig /home/iosbuilder/ios-linux/downloads/swift-6.4.1-debian12.tar.gz
+```
+
+Require exit zero, `1 of 1 signatures are valid`, and the printed signing-key fingerprint `52BB7E3DE28A71BE22EC05FFEF80A866B47A981F`, the same value as the active-key record. As a control, require a non-zero exit for a copy of the `.sig` with one changed byte.
 
 ```sh
 tar -tvzf /home/iosbuilder/ios-linux/downloads/swift-6.4.1-debian12.tar.gz
@@ -194,6 +207,7 @@ env PATH=/home/iosbuilder/ios-linux/tools/swift/usr/bin:/home/iosbuilder/ios-lin
 
 Require xtool `1.22.2` with the complete Swift distribution selected first.
 Resolve and record `swiftc`, `zip`, and inspector paths and versions as well.
+Record each installed tool with `scripts/record-component.sh <component> <version> <path> compute --env <NAME>`; the record's `--env` value is what the next project reads instead of installing again.
 Record a qualified Python 3 interpreter path and a pinned Pillow version for the build's helper scripts; install them only after approval.
 
 ## 4. Install the authorized SDK
@@ -207,21 +221,22 @@ sha256sum /home/iosbuilder/ios-linux/inputs/Xcode.xip
 Record its identity hash; this does not independently authenticate the Apple XIP certificate chain.
 
 ```sh
-env PATH=/home/iosbuilder/ios-linux/tools/swift/usr/bin:/home/iosbuilder/ios-linux/tools/xtool/squashfs-root/usr/bin:/usr/local/bin:/usr/bin:/bin /home/iosbuilder/ios-linux/tools/xtool/squashfs-root/AppRun sdk install /home/iosbuilder/ios-linux/inputs/Xcode.xip --slim
+env HOME=/home/iosbuilder/ios-linux/xtool-home XDG_CONFIG_HOME=/home/iosbuilder/ios-linux/xdg/config PATH=/home/iosbuilder/ios-linux/tools/swift/usr/bin:/home/iosbuilder/ios-linux/tools/xtool/squashfs-root/usr/bin:/usr/local/bin:/usr/bin:/bin /home/iosbuilder/ios-linux/tools/xtool/squashfs-root/AppRun sdk install /home/iosbuilder/ios-linux/inputs/Xcode.xip --slim
 ```
 
-Install the slim SDK using normal configuration discovery. Preserve any existing required XDG settings consistently across commands.
+Install the one shared SDK for this machine with `bash scripts/install-sdk.sh <xip>`; it runs the same install with `HOME=<root>/xtool-home` and `XDG_CONFIG_HOME=<root>/xdg/config` from the record, reads the real `Path:`, and writes `KMP_IOS_SDK`. Every project on the machine then reuses that bundle.
+The explicit command below shows the operation when a scripted run is not wanted; take `HOME` and `XDG_CONFIG_HOME` from the record, never from the calling user's home.
 The installer can download Darwin tools and OpenAppleMacros. Record actual versions and official release provenance; automatic downloads are not independent signature checks.
 Previously selected auxiliary versions were Darwin tools `1.1.0` and OpenAppleMacros `1.3.0`.
 
 ```sh
-env PATH=/home/iosbuilder/ios-linux/tools/swift/usr/bin:/home/iosbuilder/ios-linux/tools/xtool/squashfs-root/usr/bin:/usr/local/bin:/usr/bin:/bin /home/iosbuilder/ios-linux/tools/xtool/squashfs-root/AppRun sdk status
+env HOME=/home/iosbuilder/ios-linux/xtool-home XDG_CONFIG_HOME=/home/iosbuilder/ios-linux/xdg/config PATH=/home/iosbuilder/ios-linux/tools/swift/usr/bin:/home/iosbuilder/ios-linux/tools/xtool/squashfs-root/usr/bin:/usr/local/bin:/usr/bin:/bin /home/iosbuilder/ios-linux/tools/xtool/squashfs-root/AppRun sdk status
 ```
 
 Require installed status and record the actual `Path:` as the SDK bundle authority.
 
 ```sh
-env PATH=/home/iosbuilder/ios-linux/tools/swift/usr/bin:/home/iosbuilder/ios-linux/tools/xtool/squashfs-root/usr/bin:/usr/local/bin:/usr/bin:/bin /home/iosbuilder/ios-linux/tools/swift/usr/bin/swift sdk list
+env HOME=/home/iosbuilder/ios-linux/xtool-home XDG_CONFIG_HOME=/home/iosbuilder/ios-linux/xdg/config PATH=/home/iosbuilder/ios-linux/tools/swift/usr/bin:/home/iosbuilder/ios-linux/tools/xtool/squashfs-root/usr/bin:/usr/local/bin:/usr/bin:/bin /home/iosbuilder/ios-linux/tools/swift/usr/bin/swift sdk list
 ```
 
 Require Swift to discover the same `darwin` SDK.
@@ -239,7 +254,8 @@ Record the resolved toolset directory for later process-local `PATH` use and the
 
 Return to step 5 of `../SKILL.md` for the complete qualification gate.
 Stock Linux Kotlin/Native and Kotlin Gradle Plugin disable Apple final-binary tasks; xtool does not provide the required port.
-This reference supplies no patch or bundle. Research and propose a bounded experiment if no matching qualified implementation exists.
+The port source is in `../scripts/port/`: the HostManager agent, the libtool adapter and the fat-archive adapter. Build and install it into the machine root before qualification (manifest §6).
+When it does not fit the project's compiler or plugin versions, research available implementations and propose a bounded change before implementation.
 Use a separate minimal framework probe after approval, or reuse matching unchanged evidence. Do not compile the actual application during setup.
 Report partial readiness when the port gate fails, even if all Swift and SDK checks pass.
 

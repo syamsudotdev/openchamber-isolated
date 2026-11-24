@@ -1,6 +1,6 @@
 ---
 name: kmp-ios-setup-linux
-description: Debian-first setup for an existing KMP project's Linux-to-iOS toolchain. Use when dependencies, Swift, xtool, the Apple SDK, qualified Linux Kotlin/Native support, or signed-IPA and device-install readiness are missing. Research and adapt other distributions through official sources before installation.
+description: Debian-first setup for an existing KMP project's Linux-to-iOS toolchain, and rebuild of that toolchain on a new Linux machine. Use when dependencies, Swift, xtool, the Apple SDK, the qualified Linux Kotlin/Native port, signed-IPA and device-install readiness, or the machine toolchain record and PATH shims are missing, or when a toolchain path is not writable. Research and adapt other distributions through official sources before installation.
 ---
 
 # Set up KMP iOS tools on Linux
@@ -14,7 +14,30 @@ Default to a signed IPA artifact goal. Use an unsigned fallback only when the us
 - Existing KMP source and Swift/iOS host.
 - Permission for the specific host changes.
 - Authorized Apple SDK input and applicable license acceptance.
-- A qualified Linux Kotlin/Native port, or approval to investigate one.
+- Approval to install the qualified Linux Kotlin/Native set and its port (this skill supplies the port source).
+
+## 0. Reuse or rebuild the machine toolchain
+
+Read this section before the first install on a machine.
+One machine-wide root holds every component and the record that describes it, so a second project on the same machine reuses the tools instead of installing them again.
+Read [the machine toolchain manifest](references/toolchain-manifest.md) for the component list, official URLs, integrity checks, install paths, the root fallback order, and the blocker table.
+
+```sh
+bash scripts/setup-toolchain-root.sh
+```
+
+Choose the first usable root, write `<root>/env.sh` and `<root>/manifest.tsv`, and write shims for `konanc`, `swift`, `swiftc`, `xtool` and `zsign` into the first writable directory already on `PATH`, with `~/.local/bin` first.
+The script reports every rejected location as `BLOCK <path>: <reason>; fix: <action>` and takes the next fallback. Never select `/tmp` or another tmpfs.
+Anticipate a non-writable path, a full disk, a tmpfs root, a `PATH` without a writable directory, a missing Apple `.xip`, and an unknown checksum; the manifest's blocker table gives each fix.
+
+On a machine that already has a record, source it and use its values; do not install again a component that the record lists.
+Record each install as it verifies:
+
+```sh
+bash scripts/record-component.sh <component> <version> <path> [sha256|compute] [--env NAME]
+```
+
+**Complete when:** a usable root holds the record and the shims, and each installed component has a manifest row.
 
 ## 1. Inspect the host and project
 
@@ -53,14 +76,16 @@ Authenticate Swift before extraction and check xtool against its official releas
 Retain Swift's complete `usr` tree and select its real `usr/bin` tools.
 Prepare xtool, `zip`, and a Mach-O inspector; record absolute executable paths and versions.
 Prepare Python 3 for the build's helper scripts and pin Pillow for the icon step; record the interpreter path and the pinned Pillow version.
+Install the Kotlin/Native compiler set and its JetBrains LLVM and libffi from the manifest (C01 to C04) into the machine root, then re-run the root script so the record holds the new paths.
 Use process-local environment settings when required and record their resolved literal values.
 
-**Complete when:** authenticated tools execute with the required versions and runtime libraries.
+**Complete when:** authenticated tools execute with the required versions and runtime libraries, and the record lists each one.
 
 ## 4. Install and verify the Apple SDK
 
 Locate an authorized Xcode XIP. Request the user's Apple-account download or permissions only when needed.
-Record the input hash and provenance, then install the slim SDK with the selected xtool.
+Record the input hash and provenance, then install the one shared slim SDK with `scripts/install-sdk.sh` and the recorded xtool.
+One SDK per machine serves every project; `<root>/env.sh` holds its bundle path as `KMP_IOS_SDK`.
 Use actual `sdk status` output and `swift sdk list` as installation and discovery evidence.
 Resolve the device SDK from `swift-sdk.json`; verify platform and version in its `SDKSettings.json`.
 Check `toolset.json` against actual paths, including executable linker, librarian, and `toolset/bin/dsymutil`.
@@ -71,15 +96,17 @@ Check the SDK bundle's root `OpenAppleMacrosServer` and record auxiliary version
 ## 5. Qualify Linux Kotlin/Native capability
 
 Swift SDK installation alone does not enable KMP Apple final binaries on stock Linux.
-This skill supplies no compiler patch or qualified port bundle.
-Inspect an existing port for version-matched iOS platform KLIBs and target runtime resources.
+This skill supplies the qualified port source: the HostManager agent, the libtool adapter and the fat-archive adapter in `scripts/port/` (manifest §6).
+Build the agent with `scripts/port/agent/build-agent.sh` and install the adapters with `scripts/port/install-port.sh`, both into the machine root.
+Inspect the recorded port for version-matched iOS platform KLIBs and target runtime resources.
 Verify compiler and Kotlin Gradle Plugin host enablement across classloaders and task dependencies.
 Preserve Linux host identity, real dependency variants, compiler/plugin inputs, and resource generation.
 Verify Linux LLVM AArch64 support, toolchain overrides, Xcode/sysroot resolution, and native cinterop.
 Check Darwin archive handling, including baseline ARM64 selection from fat archives and flattened archive members.
-If no qualified port exists, research available implementations and propose a bounded port experiment before implementation.
+When the supplied port does not fit the project's compiler or plugin versions, research available implementations and propose a bounded change before implementation.
 Do not replace investigation with an automatic request for a prebuilt framework.
-After approval, qualify only a minimal device ARM64 framework probe with a real exported public Kotlin method.
+After approval, qualify only a minimal device ARM64 framework probe with a real exported public Kotlin method: `bash scripts/port/probe-framework.sh` runs `konanc` alone and checks the result (manifest §6).
+Kotlin/Native `2.4.20` on Linux aborts for an Apple target unless `-Xbinary=enableDebugTransparentStepping=false` is set; the probe sets it, and the build needs the same binary option.
 Verify retained compiled implementation, headers, module map, device platform, and native SDK bridge where applicable.
 Reuse unchanged qualification evidence when its compiler, plugins, port, and native inputs still match.
 Keep the probe separate from the actual application; leave application compilation and packaging to the build skill.
@@ -118,8 +145,10 @@ Missing USB access does not block creation of a signed file. Report **Install pe
 Include this handoff:
 
 - Host distribution/release, architecture, libc, and actual workspace/project directories.
+- Machine toolchain root, record path, shim directory, and the components it already holds, so the next project reuses them.
 - Project JDK/Gradle/Kotlin/plugin versions; framework module/task/name/mode; host paths; deployment and resource requirements.
 - Absolute Swift, `swiftc`, xtool, `zip`, and inspector paths, versions, and trust-verification results.
+- Absolute Kotlin/Native, LLVM, agent, libtool-adapter and archive-inspector paths, and their repair commands.
 - Qualified Python 3 interpreter path and the pinned Pillow version for the build's helper scripts.
 - Actual SDK bundle, device SDK, and toolset paths; SDK metadata; auxiliary versions and provenance.
 - Qualified Linux port version/configuration and probe evidence, or the remaining blocker.

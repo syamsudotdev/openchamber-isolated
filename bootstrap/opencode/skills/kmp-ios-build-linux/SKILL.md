@@ -89,6 +89,7 @@ Finish when all required values match current state; route readiness gaps to set
 ### 2. Build the real device framework
 
 Run the actual Gradle `iosArm64` Release framework task after port qualification and integration.
+Set the port's Gradle settings first ([reference: Gradle settings for the Linux port](references/build.md#gradle-settings-for-the-linux-port)). Kotlin/Native 2.4.20 on Linux needs `kotlin.native.binary.enableDebugTransparentStepping=false`; without it the link task aborts with `DebugInfoC.cpp:96 ... Assertion 'false' failed` (exit value 134), or the Gradle daemon disappears when the compiler runs in the daemon.
 Retain logs proving execution rather than `SKIPPED`, nonempty iOS dependency variants, and actual compiler/plugin/cinterop inputs.
 Run the project's resource generation and sync tasks.
 Finish with compiled Kotlin implementations, framework, headers, module map, resources, native inputs, and provenance.
