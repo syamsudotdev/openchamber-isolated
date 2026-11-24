@@ -136,11 +136,160 @@ systemctl --user daemon-reload
 
 Compose uses host networking. Reserve host TCP port `5037` for the host ADB server; the container must not bind that port.
 
-The approved [ADB bind policy](adb-bind-policy/README.md) uses cgroup BPF, a kernel program attached to a process group, to reject container binds to port `5037` while allowing outbound ADB connections. This optional startup path is specific to host user `syamsudotdev`, UID `1000`, and checkout `/home/syamsudotdev/Projects/openchamber-isolated`. A separate checkout at `/workspace/openchamber-isolated` does not change those host settings.
+The approved [ADB bind policy](adb-bind-policy/README.md) uses cgroup BPF, a kernel program attached to a process group, to reject container binds to port `5037` while allowing outbound ADB connections. This optional startup path is specific to host user `syamsudotdev`, UID `1000`, and checkout `/home/syamsudotdev/Projects/openchamber-isolated`. A separate checkout at `/workspace/personals/openchamber-isolated` does not change those host settings.
 
 Before adoption, stop and disable the old user Compose service if it is enabled. Do not stop an already protected container merely to repeat setup. Avoid two startup controllers. After adoption, start or restart only through the root systemd `openchamber-managed.service`; direct Docker Compose or user-service startup bypasses policy attachment.
 
 The installer is dormant: it does not enable the managed service. Follow the policy README to run the tests, then explicitly enable the service after verification. Host checks confirmed `EPERM` for explicit IPv4 and IPv6 binds to `5037`, `SUCCESS` for other binds, outbound ADB `OKAY`, and protection after container recreation. Reboot behavior remains untested.
+
+## Run in Docker Sandboxes
+
+[Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) runs a workload in a microVM, a small virtual machine with its own kernel. The `sbx` command-line tool controls the sandboxes. The kit descriptor `openchamber-isolated.yaml` replaces Compose for this path. The kit builds the `sandbox` stage of the `Dockerfile`.
+
+Status: no step in this section ran on a host with `sbx`. Test each step on your own machine first. The [unverified statements](#unverified-statements) list the open points.
+
+### Sandbox Requirements
+
+- `sbx` 0.47.0 or later. The kit uses the `long-running@1` capability.
+- A Linux x86-64 host (Ubuntu 24.04 or later, KVM on, your user in the `kvm` group) or a Windows 11 x64 host. See [Install Docker Sandboxes](https://docs.docker.com/ai/sandboxes/install/).
+- A Docker account for `sbx login`.
+
+macOS on Apple silicon is not supported. `sbx` builds the kit for the host platform, and the image accepts only `linux/amd64`.
+
+### Differences from Compose
+
+| Compose setting | Sandbox equivalent |
+| --- | --- |
+| `read_only`, `cap_drop`, `no-new-privileges`, `pids_limit` | None. The microVM boundary protects the host instead. |
+| `cpus`, `mem_limit` | Kit request of 8 CPUs and 16 GB. `sbx create --cpus` and `--memory` override it. |
+| `network_mode: host`, port `3000` | Kit port `3000`. The host side binds `127.0.0.1` on a port that `sbx` selects. |
+| `./config`, `./data` bind mounts | Sandbox volumes at `~/.config/opencode`, `~/.config/openchamber`, and `~/.local/share/opencode`. They remain after `sbx rm`. |
+| `opencode-home` and `android-sdk` volumes, `./cache` | The sandbox disk. It remains after `sbx stop` and is deleted by `sbx rm`. |
+| `./workspace` | An optional workspace path. `sbx` mounts it at the same absolute path. |
+| `ios-signing`, `ios-artifacts`, `ios_p12_password` secret | Files that you copy with `sbx cp`. |
+| usbmux relay, host ADB server, ADB bind policy | Not available. |
+
+The user is `agent` with home `/home/agent`, because Docker Sandboxes requires that account. The link `/home/node` points to `/home/agent`, so the bundled configuration paths stay valid.
+
+### Install and Sign In
+
+1. Install `sbx` on Linux:
+   ```bash
+   curl -fsSL https://get.docker.com | sudo REPO_ONLY=1 sh && sudo apt install docker-sbx
+   ```
+   On Windows, run `winget install -h Docker.sbx`.
+2. Sign in:
+   ```bash
+   sbx login
+   ```
+3. Set the network preset. This command works only before a preset is set:
+   ```bash
+   sbx policy init balanced
+   ```
+
+### Create the Sandbox
+
+1. Enter the repository directory.
+2. Put the UI password in the shell environment:
+   ```bash
+   read -rs OPENCHAMBER_UI_PASSWORD && export OPENCHAMBER_UI_PASSWORD
+   ```
+3. Create the sandbox. Replace `~/Projects/my-app` with your project, or remove it for a sandbox without a workspace:
+   ```bash
+   sbx create --name openchamber -e OPENCHAMBER_UI_PASSWORD "$PWD" ~/Projects/my-app
+   ```
+   The first creation builds the image in the `sbx-kit-builder` sandbox. Build downloads use the network of that builder, not the kit network rules. Expect a duration similar to `docker compose build`.
+4. Add `--cpus <count>` and `--memory <size>`, such as `--memory 12g`, when the host cannot give 8 CPUs and 16 GB. The default root disk is 20 GB. To make it larger, set `DOCKER_SANDBOXES_ROOT_SIZE=40g` before `sbx create`.
+5. Start the sandbox:
+   ```bash
+   sbx start openchamber
+   ```
+
+A startup hook seeds the bundled configuration and starts OpenChamber at each boot. Its output goes to `/home/agent/.cache/openchamber.log`.
+
+The sandbox can read the password value. Do not use a password that you use elsewhere.
+
+### Open the User Interface
+
+1. Find the host port:
+   ```bash
+   sbx port ls openchamber
+   ```
+2. Open `http://127.0.0.1:<host-port>` in a browser on the same host.
+3. If the page does not load, read the log:
+   ```bash
+   sbx exec openchamber -- tail -n 50 /home/agent/.cache/openchamber.log
+   ```
+
+To open a shell in the sandbox, run `sbx run --name openchamber`. Use this shell for steps such as `claude auth login` and `gh auth login`.
+
+### Allow Network Hosts
+
+The kit allows these hosts at run time: `opencode.ai`, `models.dev`, `registry.npmjs.org`, `api.anthropic.com`, `mcp.atlassian.com`, `github.com`, and `api.github.com`. The `balanced` preset allows more hosts.
+
+1. Show the blocked requests:
+   ```bash
+   sbx policy log
+   ```
+2. Allow a host for this sandbox only:
+   ```bash
+   sbx policy allow network --sandbox openchamber <host>
+   ```
+
+### Copy iOS Signing Files
+
+Do these steps only if you sign iOS apps in the sandbox. Run them from the repository directory on the host.
+
+1. Create the directories:
+   ```bash
+   sbx exec openchamber -- install -d -m 700 /home/agent/ios-signing /home/agent/ios-artifacts
+   ```
+2. Copy each file. Use one command for each file:
+   ```bash
+   sbx cp ios-signing/p12-password openchamber:/home/agent/ios-signing/p12-password
+   sbx cp ios-signing/<name>.p12 openchamber:/home/agent/ios-signing/<name>.p12
+   sbx cp ios-signing/<name>.mobileprovision openchamber:/home/agent/ios-signing/<name>.mobileprovision
+   ```
+3. Set the file modes:
+   ```bash
+   sbx exec openchamber -- sh -c 'chmod 600 /home/agent/ios-signing/*'
+   ```
+
+`sbx cp` keeps the numeric owner of the host file on Linux and macOS. The `agent` user has UID 1000. If your host UID is not 1000, step 3 fails and the agent cannot read the files. Files copied from Windows belong to `root`.
+
+In the sandbox, read the password as `-passin file:/home/agent/ios-signing/p12-password`. The sandbox has no `/run/secrets/ios_p12_password` file.
+
+Copy a result to the host:
+
+```bash
+sbx cp openchamber:/home/agent/ios-artifacts/<name>.ipa ./ios-artifacts/
+```
+
+The sandbox cannot install an app on a device, because it has no usbmux relay.
+
+### Stop, Update, and Remove
+
+```bash
+sbx stop openchamber
+sbx start openchamber
+```
+
+`sbx start` runs the startup hook again, so OpenChamber starts again.
+
+To use a changed `Dockerfile`, remove the sandbox and create it again with the same name and kit path. The three volumes attach again when the sandbox name, the kit source, and the volume path match:
+
+```bash
+sbx rm openchamber
+```
+
+`sbx rm` deletes the sandbox disk, including the Android SDK changes, the Gradle cache, and the iOS files. To delete the volumes too, find them with `sbx volume ls`.
+
+### Unverified Statements
+
+1. The kit lookup in a directory that also contains `compose.yaml`. The descriptor uses the name of the repository directory, `openchamber-isolated`. If your checkout uses another directory name, the lookup can fail.
+2. Java trust of the sandbox proxy certificate authority. The image points Node.js, curl, and Python to `/etc/ssl/certs/ca-certificates.crt`. Java uses its own trust store, so Gradle and `sdkmanager` downloads can fail.
+3. The ownership of new volume roots. A startup hook gives them to `agent`.
+4. The hosts that OpenCode providers and the `claude` login need beyond the kit list.
 
 ## Directory Layout
 
@@ -153,6 +302,7 @@ ios-artifacts/                Signed IPAs and build evidence (not tracked)
 workspace/                    OpenCode workspace
 Dockerfile                    Container image definition
 compose.yaml                  Container runtime configuration
+openchamber-isolated.yaml     Docker Sandboxes kit descriptor
 entrypoint.sh                 Container startup script
 bootstrap/opencode/           Bundled agents, skills, and nested assets
 bootstrap/gradle/             Bundled Gradle user settings and init scripts
@@ -438,11 +588,11 @@ docker compose build
 Build and test a disposable Android runtime image:
 
 ```bash
-docker build --platform linux/amd64 -t openchamber-verify .
+docker build --platform linux/amd64 --target openchamber -t openchamber-verify .
 sh tests/android-runtime.sh
 ```
 
-The Dockerfile defaults `TARGETARCH` to `amd64` for legacy builders. No `--progress` option is required. To test another image, pass its exact name as the first argument:
+The last `Dockerfile` stage, `sandbox`, is for Docker Sandboxes. Pass `--target openchamber` to every direct `docker build` of the Compose image. Compose and the `Update versions` workflow select that target. The Dockerfile defaults `TARGETARCH` to `amd64` for legacy builders. No `--progress` option is required. To test another image, pass its exact name as the first argument:
 
 ```bash
 sh tests/android-runtime.sh opencode-local:latest

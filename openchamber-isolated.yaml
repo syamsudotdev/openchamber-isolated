@@ -1,0 +1,79 @@
+# syntax=docker/sandbox-kit:3
+# Docker Sandboxes workload kit. See "Run in Docker Sandboxes" in README.md.
+schemaVersion: "3"
+kind: workload
+displayName: OpenChamber
+dockerfile: ./Dockerfile
+
+capabilities:
+  - type: com.docker.sandbox/sbx@1
+  - type: com.docker.sandbox/long-running@1
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      startup:
+        - command: chown agent:agent /home/agent/.config/opencode /home/agent/.config/openchamber /home/agent/.local/share/opencode
+          user: "0"
+          description: Give the agent user the persistent volume roots
+        - command: exec /usr/local/bin/yolo-entrypoint >>/home/agent/.cache/openchamber.log 2>&1
+          user: agent
+          background: true
+          env:
+            - OPENCHAMBER_UI_PASSWORD
+            - FIGMA_API_KEY
+            - OPENCODE_CONFIG_DIR
+            - OPENCODE_CONFIG
+            - OPENCODE_DATA_DIR
+            - OPENCHAMBER_DATA_DIR
+            - OPENCHAMBER_OPENCODE_HOSTNAME
+            - XDG_CONFIG_HOME
+            - XDG_DATA_HOME
+            - XDG_CACHE_HOME
+            - NPM_CONFIG_CACHE
+            - CLAUDE_CODE_ENTRYPOINT
+            - JAVA_HOME
+            - ANDROID_HOME
+            - ANDROID_SDK_ROOT
+            - PLAYWRIGHT_BROWSERS_PATH
+            - CHROME_PATH
+            - LANG
+            - LC_ALL
+            - SSL_CERT_FILE
+            - CURL_CA_BUNDLE
+            - REQUESTS_CA_BUNDLE
+            - NODE_EXTRA_CA_CERTS
+          description: Seed the bundled configuration and start OpenChamber on port 3000
+  - type: com.docker.sandbox/port@1
+    config:
+      name: openchamber
+      container: 3000
+  - type: com.docker.sandbox/resources@1
+    optional: true
+    config:
+      cpu: 8
+      memory: 16g
+  - type: com.docker.sandbox/volume@1
+    description: OpenCode configuration survives sandbox removal
+    config:
+      path: /home/agent/.config/opencode
+      size: 1g
+  - type: com.docker.sandbox/volume@1
+    description: OpenChamber settings survive sandbox removal
+    config:
+      path: /home/agent/.config/openchamber
+      size: 512m
+  - type: com.docker.sandbox/volume@1
+    description: OpenCode sessions and provider sign-ins survive sandbox removal
+    config:
+      path: /home/agent/.local/share/opencode
+      size: 4g
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      runtime:
+        allow:
+          - opencode.ai
+          - models.dev
+          - registry.npmjs.org
+          - api.anthropic.com
+          - mcp.atlassian.com
+          - github.com
+          - api.github.com

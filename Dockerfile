@@ -1,4 +1,4 @@
-FROM node:26-trixie-slim
+FROM node:26-trixie-slim AS openchamber
 
 # The Update versions workflow updates the OpenCode and OpenChamber pins.
 # Each other tool installs its latest release unless a build argument selects an exact version.
@@ -117,3 +117,36 @@ ENV CLAUDE_CODE_ENTRYPOINT=opencode-claude
 EXPOSE 3000
 
 ENTRYPOINT ["/usr/local/bin/yolo-entrypoint"]
+
+# Docker Sandboxes workload for openchamber-isolated.yaml. Keep this stage last,
+# because the kit build uses the default target; Compose and CI select openchamber.
+FROM openchamber AS sandbox
+
+# Docker Sandboxes requires the user agent with UID 1000 and home /home/agent.
+# The link keeps the /home/node paths in the bundled configuration valid.
+USER root
+RUN usermod --login agent --home /home/agent --move-home node \
+  && groupmod --new-name agent node \
+  && ln -s /home/agent /home/node
+
+USER agent
+
+ENV HOME=/home/agent
+ENV XDG_CONFIG_HOME=/home/agent/.config
+ENV XDG_DATA_HOME=/home/agent/.local/share
+ENV XDG_CACHE_HOME=/home/agent/.cache
+ENV OPENCODE_CONFIG_DIR=/home/agent/.config/opencode
+ENV OPENCODE_CONFIG=/home/agent/.config/opencode/opencode.jsonc
+ENV OPENCODE_DATA_DIR=/home/agent/.local/share/opencode
+ENV OPENCHAMBER_DATA_DIR=/home/agent/.config/openchamber
+ENV NPM_CONFIG_CACHE=/home/agent/.cache/npm
+
+# The sandbox adds its proxy CA to this bundle at start.
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+
+# A lifecycle hook starts OpenChamber; sandbox sessions open a login shell.
+ENTRYPOINT ["bash"]
+CMD ["-l"]

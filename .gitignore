@@ -6,6 +6,7 @@
 !/LICENSE
 !/README.md
 !/compose.yaml
+!/openchamber-isolated.yaml
 !/entrypoint.sh
 !/openchamber.service.example
 !/opencode.jsonc

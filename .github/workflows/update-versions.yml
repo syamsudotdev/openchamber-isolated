@@ -31,7 +31,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/update-versions.mjs
       - name: Build with the latest tools
-        run: docker build --pull --no-cache --platform linux/amd64 -t openchamber-update-check .
+        run: docker build --pull --no-cache --platform linux/amd64 --target openchamber -t openchamber-update-check .
       - name: Record installed versions
         run: |
           set -eu
