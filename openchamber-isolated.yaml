@@ -20,6 +20,7 @@ capabilities:
           env:
             - OPENCHAMBER_UI_PASSWORD
             - FIGMA_API_KEY
+            - ALIBABA99_BASE_URL
             - OPENCODE_CONFIG_DIR
             - OPENCODE_CONFIG
             - OPENCODE_DATA_DIR

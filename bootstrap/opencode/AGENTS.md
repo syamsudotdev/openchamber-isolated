@@ -175,7 +175,7 @@ Do not publish content, run builds or tests, or launch write-capable subagents b
 
 Before approval, you may write a draft Quint specification in the scratchpad directory and run `quint` on it.
 
-Move the specification into the project only inside the approved scope.
+Move the specification into the model directory only inside the approved scope.
 
 Inspect the necessary context before a change.
 
@@ -279,15 +279,17 @@ Quint is a specification language for state machines.
 
 Use a Quint specification when a change affects state that concurrent events, retries, or event order can corrupt.
 
+For existing code, the rules in "Formal Verification of Existing Protocols" override the instruction to change the design until no violation remains.
+
 In each plan, state whether the Quint rule applies, with a one-sentence reason.
 
 During planning, load `quint-modeling`, then write or update the specification before the implementation.
 
 Write each acceptance criterion as a named invariant in the specification.
 
-Run `quint run --invariant=<name> --mbt --seed=<seed>` for each invariant, and change the design until no violation remains.
+Run `quint run --backend=rust --invariant=<name> --mbt --seed=<seed>` for each invariant, and change the design until no violation remains.
 
-Run `quint verify` when the plan requires all runs up to a step bound to be checked.
+After `quint run` finds no violation, run `quint verify --invariant=<name> --max-steps=<bound>` for each invariant as the last gate.
 
 Include the specification path, the invariants, and the seeds in the plan.
 
@@ -295,11 +297,47 @@ Treat the specification as an independent model under the Test Evidence rules.
 
 During verification, generate traces with `--out-itf`, replay them against the implementation, and compare each state.
 
-Record the seed with each trace result.
+Record the seed with each `quint run` trace, and record the step bound with each `quint verify` trace.
 
 Load `quint-openui` to show a trace or a counterexample to the user.
 
 Load `quint-lang` for Quint syntax, CLI, and counterexample questions.
+
+### Formal Verification of Existing Protocols
+
+A protocol is code where threads or tasks share state, such as shutdown, close, hand-over, retry, or lease logic.
+
+When the user asks to verify an existing protocol, load `formal-verify` and follow its workflow.
+
+Use Quint instead of TLA+ for a protocol model, because `formal-verify` uses the tool that the user names.
+
+Write and check the model with the rules in "Quint Specifications".
+
+Also record `--max-samples` and `--max-steps` with each `quint run` result.
+
+Map each `quint run` counterexample to the code before you run `quint verify`.
+
+Report a `quint run` pass only as sampled evidence, because it does not check all runs up to a step bound.
+
+Report that the `formal-verify` TLA+ helpers, such as `tlc-matrix.sh` and `mutate.py`, did not check the Quint model.
+
+For each property, add one deliberate bug to a copy of the specification, and confirm that `quint run` or `quint verify` reports a violation of that property.
+
+Do not report a property as passed until its deliberate bug is reported.
+
+Map each counterexample step to a code event and a `file:line` location.
+
+Check if the shipped settings can reach each counterexample.
+
+Reproduce each reachable counterexample as a deterministic test that fails on the current code.
+
+Record the failed assertion of each reproduction test on the current code.
+
+A reproduction test must pass only after a fix, so the pass-after-restoration rule in "Test Evidence" does not apply to it before the fix.
+
+Until the fix, mark each reproduction test with the expected-failure mechanism of the project, and report the test as a known failure, not as a failed check.
+
+Do not change production code unless the user requests a fix.
 
 ### Android Verification
 
@@ -464,6 +502,48 @@ Track persistent project documents in Git.
 Do not add persistent project documents to `.gitignore`.
 
 Do not add temporary Markdown planning files to merge commits unless the user requests them.
+
+Formal verification workflow is not standardized across repositories.
+
+Do not track `.qnt` files in Git unless the user requests it.
+
+Do not track Quint trace artifacts in Git unless the user requests it.
+
+Quint trace artifacts include ITF JSON files from `--out-itf`, seed and step-bound records, and counterexample output.
+
+The model directory is `.quint/` at the top level of the main worktree.
+
+The main worktree is the parent directory of the output of `git rev-parse --path-format=absolute --git-common-dir`.
+
+All worktrees of one repository share one model directory.
+
+Add `.quint/` to the file that `git rev-parse --git-path info/exclude` prints.
+
+Do not add `.quint/` to `.gitignore`.
+
+Keep each approved `.qnt` file in the model directory.
+
+Keep a `manifest.md` file in the model directory. For each `.qnt` file, record the covered source files, the invariants, the seeds, the `--max-samples` values, and the step bounds.
+
+Keep `--out-itf` traces and counterexample output in the scratchpad directory. Regenerate them from the recorded seeds when necessary.
+
+Before you plan a change, read the manifest when it exists.
+
+Update an existing `.qnt` file instead of writing a new one.
+
+When a change modifies a covered source file, run each recorded `quint run` and `quint verify` command again before you report completion.
+
+Report a violation as a failed check.
+
+Update the manifest after each change to a `.qnt` file.
+
+Do not commit a test that reads a `.qnt` file or a Quint trace artifact.
+
+Put the expected states in each committed test as literal values.
+
+This local check replaces the `formal-verify` instruction to keep models in CI.
+
+The local check runs only for changes that an agent makes on this machine.
 
 When you resolve merge conflicts, remove references to imports, classes, and other code that no longer exist.
 

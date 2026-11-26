@@ -349,6 +349,7 @@ You can set these Compose variables in `.env`:
 - `OPENCHAMBER_UI_PASSWORD` (required)
 - `OPENCHAMBER_PORT` (default `3000`; set a different port for each instance on the same host, because Compose uses host networking)
 - `FIGMA_API_KEY` (optional; add it to `.env` for the Figma integration; defaults to an empty value)
+- `ALIBABA99_BASE_URL` (optional; the OpenAI-compatible endpoint of the `alibaba99` provider in `opencode.jsonc`; defaults to an empty value)
 - `OPENCODE_CACHE`
 - `OPENCODE_WORKSPACE`
 - `OPENCODE_CONFIG`
@@ -391,7 +392,9 @@ Read the password only as `openssl … -passin file:/run/secrets/ios_p12_passwor
 
 The image bundles root `opencode.jsonc` and the files in `bootstrap/opencode/`. The bundle includes agents, skills, and their nested assets. Startup copies missing files recursively into `OPENCODE_CONFIG_DIR`.
 
-The bundled `opencode.jsonc` adds the remote Atlassian MCP server and the local Figma MCP server (`figma-developer-mcp@0.13.2` through `npx`, with `FIGMA_API_KEY`). The Atlassian server asks for sign-in at runtime. The bundled `oh-my-opencode-slim.json` selects the `claude` preset by default and keeps the `openai` preset.
+The bundled `opencode.jsonc` adds the remote Atlassian MCP server and the local Figma MCP server (`figma-developer-mcp@0.13.2` through `npx`, with `FIGMA_API_KEY`). The Atlassian server asks for sign-in at runtime. It also loads the `agent-formal-verify@0.4.12` plugin and defines the OpenAI-compatible `alibaba99` provider, whose `baseURL` comes from `ALIBABA99_BASE_URL`. Connect the provider key at runtime. The bundled `oh-my-opencode-slim.json` selects the `claude` preset by default and keeps the `openai` preset.
+
+The bundled skills are grouped in context folders under `skills/`: `agent-workflow`, `android`, `apple`, `code-quality`, `formal-methods`, `kotlin-footguns`, `ui-design`, and `writing`. OpenCode 2.4.1 finds a skill in any folder up to six levels below `skills/` and uses the name of the folder that holds `SKILL.md` as the skill name, so the group folder does not change a skill name. A group folder must not contain its own `SKILL.md`. Keep each `*-footguns` skill in the same folder as `footgun-scan`, because `footgun-scan/scripts/scan.py` finds trap files in its sibling folders.
 
 Startup preserves every existing destination. It does not replace user files, directories, or file symlinks, including dangling symlinks. A directory symlink or a file that blocks a required directory stops startup with an error. Startup does not follow destination directory symlinks. Do not change configuration paths concurrently with startup.
 
@@ -400,9 +403,18 @@ Rebuilding changes the image bundle. It does not replace existing files in mount
 Edits to the live skills in `config/skills/` do not return to `bootstrap/opencode/skills/`. To track a changed skill, compare and copy it on the host, then review and commit the result:
 
 ```bash
-diff -ru bootstrap/opencode/skills/<name> config/skills/<name>
-cp -R config/skills/<name>/. bootstrap/opencode/skills/<name>/
+diff -ru bootstrap/opencode/skills/<group>/<name> config/skills/<group>/<name>
+cp -R config/skills/<group>/<name>/. bootstrap/opencode/skills/<group>/<name>/
 ```
+
+A configuration volume from an image before the grouped layout keeps its flat `skills/<name>/` folders, and the next startup adds the grouped copies next to them. Two folders then give the same skill name. Before the first startup with the grouped layout, back up `config/skills/` on the host and remove its flat skill folders. Keep the group folders and any skill that you added yourself:
+
+```bash
+cp -a config/skills config/skills.backup
+for d in config/skills/*/; do n=$(basename "$d"); [ -f "$d/SKILL.md" ] && [ -n "$(find bootstrap/opencode/skills -mindepth 2 -maxdepth 2 -type d -name "$n")" ] && rm -rf -- "$d"; done
+```
+
+The loop keeps flat skill folders that the bundle no longer contains, such as the removed Matt Pocock and `ponytail` skills. Remove them by hand if you do not use them. Also update absolute paths in local files that point to a flat skill folder, such as `skills/footgun-scan/` in `agents/reviewer.md`. The bundled `agents/reviewer.md` uses `skills/kotlin-footguns/footgun-scan/`.
 
 `OPENCODE_BOOTSTRAP_DIR` can override the source directory for isolated tests. Its default is `/opt/bootstrap/opencode`. Use only a trusted source directory. Bundled symlinks and special files are not supported.
 

@@ -59,5 +59,55 @@
   },
   "websearch": {
     "provider": "random"
-  }
+  },
+  "providers": {
+    "alibaba99": {
+      "name": "Alibaba 99",
+      "package": "aisdk:@ai-sdk/openai-compatible",
+      "settings": {
+        "baseURL": "{env:ALIBABA99_BASE_URL}"
+      },
+      "models": {
+        "deepseek-v4.1-flash-1017": {
+          "modelID": "deepseek-v4.1-flash-1017",
+          "name": "deepseek-v4.1-flash-1017",
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "limit": {
+            "context": 1000000,
+            "output": 384000
+          }
+        },
+        "qwen4-max": {
+          "modelID": "qwen4-max",
+          "name": "qwen4-max",
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "limit": {
+            "context": 983000,
+            "output": 256000
+          }
+        }
+      }
+    }
+  },
+  "plugins": [
+    "agent-formal-verify@0.4.12"
+  ]
 }

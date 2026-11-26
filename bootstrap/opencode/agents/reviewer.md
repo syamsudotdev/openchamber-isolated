@@ -9,7 +9,7 @@ permissions:
     resource: "*"
     effect: deny
   - action: shell
-    resource: "uv run /home/node/.config/opencode/skills/footgun-scan/scripts/scan.py *"
+    resource: "uv run /home/node/.config/opencode/skills/kotlin-footguns/footgun-scan/scripts/scan.py *"
     effect: allow
 ---
 
@@ -59,7 +59,7 @@ For code style, inspect naming, formatting, local conventions, and unnecessary c
 
 In Kotlin and Java files, flag a fully qualified name when an import can replace it.
 
-For Kotlin and Kotlin Multiplatform reviews, load `footgun-scan`. Run it only with `uv run /home/node/.config/opencode/skills/footgun-scan/scripts/scan.py <arguments>`. Triage each scan hit with the linked area skill references before you report it.
+For Kotlin and Kotlin Multiplatform reviews, load `footgun-scan`. Run it only with `uv run /home/node/.config/opencode/skills/kotlin-footguns/footgun-scan/scripts/scan.py <arguments>`. Triage each scan hit with the linked area skill references before you report it.
 
 Report findings by severity.
 
