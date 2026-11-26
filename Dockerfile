@@ -11,6 +11,11 @@ ARG RTK_VERSION=latest
 ARG FFF_VERSION=latest
 ARG GH_VERSION=latest
 ARG GITLEAKS_VERSION=latest
+ARG CLAUDE_VERSION=latest
+ARG ACTIONLINT_VERSION=latest
+ARG SOPS_VERSION=latest
+ARG COSIGN_VERSION=latest
+ARG MAESTRO_VERSION=latest
 ARG TEMURIN_VERSION=latest
 ARG TARGETARCH=amd64
 
@@ -21,15 +26,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
+    age \
     bash \
     ca-certificates \
     curl \
     git \
     jq \
+    librsvg2-bin \
     openssh-client \
     python3 \
     build-essential \
     ripgrep \
+    shellcheck \
     unzip \
   && rm -rf /var/lib/apt/lists/*
 
@@ -57,12 +65,21 @@ RUN playwright install --with-deps chromium \
   && test -x "$1" \
   && ln -s "$1" /usr/local/bin/chromium \
   && printf 'chromium %s\n' "$(chromium --version)" >> /usr/local/share/image-versions.txt \
+  && printf 'age %s\n' "$(dpkg-query -W -f='${Version}' age)" >> /usr/local/share/image-versions.txt \
+  && printf 'shellcheck %s\n' "$(dpkg-query -W -f='${Version}' shellcheck)" >> /usr/local/share/image-versions.txt \
+  && printf 'rsvg-convert %s\n' "$(dpkg-query -W -f='${Version}' librsvg2-bin)" >> /usr/local/share/image-versions.txt \
   && cat /usr/local/share/image-versions.txt
 
 ENV CHROME_PATH=/usr/local/bin/chromium
 
 COPY install-tools.sh /opt/bootstrap/install-tools.sh
-RUN TARGETARCH="${TARGETARCH}" sh /opt/bootstrap/install-tools.sh \
+RUN TARGETARCH="${TARGETARCH}" \
+  CLAUDE_VERSION="${CLAUDE_VERSION}" \
+  ACTIONLINT_VERSION="${ACTIONLINT_VERSION}" \
+  SOPS_VERSION="${SOPS_VERSION}" \
+  COSIGN_VERSION="${COSIGN_VERSION}" \
+  MAESTRO_VERSION="${MAESTRO_VERSION}" \
+  sh /opt/bootstrap/install-tools.sh \
   && rtk hook opencode --help
 
 ENV JAVA_HOME=/opt/temurin-25
@@ -113,6 +130,10 @@ ENV OPENCHAMBER_OPENCODE_HOSTNAME=127.0.0.1
 # The Claude Agent SDK labels requests sdk-ts when this is empty, and sdk-*
 # labels use the 5-hour limit faster (anthropics/claude-code#97074).
 ENV CLAUDE_CODE_ENTRYPOINT=opencode-claude
+
+# /usr/local is read-only at runtime, so the installed Claude Code cannot
+# replace itself. Manual `claude update` still fails for the same reason.
+ENV DISABLE_AUTOUPDATER=1
 
 EXPOSE 3000
 
