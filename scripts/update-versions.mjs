@@ -118,9 +118,9 @@ async function main() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main().catch(error => {
-    // Request errors contain only trusted host names and status codes, never response bodies or tokens.
+    // These messages contain only package names, pin names, host names, and status codes, never response bodies or tokens.
     process.exitCode = 1;
     console.error('Version update failed. Registry, release, pin, or output validation failed; no commit is permitted.');
-    if (/^HTTP \d+ from (api\.github\.com|registry\.npmjs\.org)\.$/.test(error.message)) console.error(error.message);
+    if (/^((HTTP \d+ from |Invalid JSON from |Request failed or timed out: )(api\.github\.com|registry\.npmjs\.org)\.|(Unexpected pin occurrences|Pin mismatch|Refusing downgrade|Unexpected release metadata): [\w@/ .-]+\.|Expected an exact stable version\.|Unsafe commit message path\.)$/.test(error.message)) console.error(error.message);
   });
 }
