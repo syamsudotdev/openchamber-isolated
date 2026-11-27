@@ -2,8 +2,8 @@ FROM node:26-trixie-slim AS openchamber
 
 # The Update versions workflow updates the OpenCode and OpenChamber pins.
 # Each other tool installs its latest release unless a build argument selects an exact version.
-ARG OPENCODE_VERSION=2.4.1
-ARG OPENCHAMBER_VERSION=2.8.0
+ARG OPENCODE_VERSION=2.4.2
+ARG OPENCHAMBER_VERSION=2.8.1
 ARG PLAYWRIGHT_VERSION=latest
 ARG QUINT_VERSION=latest
 ARG UV_VERSION=latest
